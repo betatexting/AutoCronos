@@ -20,7 +20,8 @@
       "outputPath": "C:\\AutoCronos\\src\\AutoCronos.Desktop\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\AutoCronos\\NuGet.Config"
+        "C:\\AutoCronos\\NuGet.Config",
+        "C:\\Users\\Contas Contabilidade\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"

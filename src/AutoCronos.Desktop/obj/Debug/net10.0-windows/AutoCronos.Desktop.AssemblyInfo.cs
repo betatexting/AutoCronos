@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AutoCronos.Desktop")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b8ac0deee461476c893fed599e9d22cfe71f73f5")]
 [assembly: System.Reflection.AssemblyProductAttribute("AutoCronos.Desktop")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AutoCronos.Desktop")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

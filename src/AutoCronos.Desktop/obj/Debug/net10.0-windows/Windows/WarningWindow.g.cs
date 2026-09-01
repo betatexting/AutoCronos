@@ -51,7 +51,7 @@ namespace AutoCronos.Desktop.Windows {
                 return;
             }
             _contentLoaded = true;
-            System.Uri resourceLocater = new System.Uri("/AutoCronos.Desktop;component/windows/warningwindow.xaml", System.UriKind.Relative);
+            System.Uri resourceLocater = new System.Uri("/AutoCronos.Desktop;V1.0.0.0;component/windows/warningwindow.xaml", System.UriKind.Relative);
             
             #line 1 "..\..\..\..\Windows\WarningWindow.xaml"
             System.Windows.Application.LoadComponent(this, resourceLocater);

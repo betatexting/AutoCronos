@@ -1,5 +1,5 @@
 ﻿AutoCronos.Desktop
-
+1.0.0.0
 
 winexe
 C#
@@ -12,9 +12,9 @@ TRACE;DEBUG;NET;NET10_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_O
 C:\AutoCronos\src\AutoCronos.Desktop\App.xaml
 3578117507
 
-9-1655811558
+11-735240615
 206890450207
 MainWindow.xaml;Windows\FloatingLauncherWindow.xaml;Windows\WarningWindow.xaml;
 
-False
+True
 
