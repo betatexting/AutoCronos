@@ -1,0 +1,13 @@
+<Window x:Class="AutoCronos.Desktop.Windows.FloatingLauncherWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="64" Height="64" WindowStyle="None" AllowsTransparency="True" Background="Transparent" Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize">
+    <Grid>
+        <Button x:Name="LauncherButton" Click="LauncherButton_Click" Cursor="Hand" BorderThickness="0" Background="#153A5B" Foreground="White" FontSize="24" Content="A" ToolTip="AutoCronos">
+            <Button.Template><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}" CornerRadius="32" BorderBrush="White" BorderThickness="2"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border></ControlTemplate></Button.Template>
+        </Button>
+        <Popup x:Name="MenuPopup" PlacementTarget="{Binding ElementName=LauncherButton}" Placement="Left" StaysOpen="False">
+            <Border Background="White" CornerRadius="12" Padding="8" BorderBrush="#D6DCE6" BorderThickness="1"><StackPanel Width="210">
+                <Button Click="Board_Click" Content="Quadro de tarefas" Padding="12,9" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" />
+                <Button Click="Warnings_Click" Content="Warning" Padding="12,9" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" />
+            </StackPanel></Border>
+        </Popup>
+    </Grid>
+</Window>

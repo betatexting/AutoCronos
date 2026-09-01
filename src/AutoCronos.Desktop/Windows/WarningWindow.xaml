@@ -1,0 +1,10 @@
+<Window x:Class="AutoCronos.Desktop.Windows.WarningWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="AutoCronos | Warnings" Height="560" Width="720" Background="#F5F7FA">
+    <Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,20"><TextBlock Text="Warnings" FontSize="28" FontWeight="SemiBold" Foreground="#172033" /><TextBlock Text="Itens que aguardam decisao humana" Foreground="#61708A" Margin="0,4,0,0" /></StackPanel>
+        <ListBox Grid.Row="1" ItemsSource="{Binding}" BorderThickness="0" Background="Transparent"><ListBox.ItemTemplate><DataTemplate>
+            <Border Background="White" CornerRadius="12" Padding="16" Margin="0,0,0,12"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel>
+                <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="#172033" /><TextBlock Text="{Binding CompanyName}" Margin="0,6,0,0" Foreground="#33445F" /><TextBlock Text="{Binding TaxId}" Margin="0,2,0,0" Foreground="#61708A" FontSize="12" /><TextBlock Text="{Binding Description}" Margin="0,9,0,0" Foreground="#61708A" TextWrapping="Wrap" />
+            </StackPanel><StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0"><Button Content="Aprovar" Padding="12,6" Margin="0,0,0,7" Background="#E7F6EC" Foreground="#237A45" BorderThickness="0" /><Button Content="Recusar" Padding="12,6" Background="#FCEBEA" Foreground="#A4382E" BorderThickness="0" /></StackPanel></Grid></Border>
+        </DataTemplate></ListBox.ItemTemplate></ListBox>
+    </Grid>
+</Window>

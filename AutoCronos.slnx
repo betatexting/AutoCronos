@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AutoCronos.Desktop/AutoCronos.Desktop.csproj" />
+  </Folder>
+</Solution>
