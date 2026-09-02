@@ -1,0 +1,63 @@
+<Window
+    x:Class="AutoCronos.Desktop.Windows.EmailSettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="AutoCronos | Integracao de e-mail"
+    Width="620"
+    Height="420"
+    WindowStartupLocation="CenterOwner"
+    Background="#F5F7FA">
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="0,0,0,18">
+            <TextBlock Text="Integracao com Gmail" FontSize="28" FontWeight="SemiBold" Foreground="#172033" />
+            <TextBlock Text="Conecte sua caixa para ler os comunicados e aplicar os marcadores do AutoCronos." Margin="0,4,0,0" Foreground="#61708A" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="White" BorderBrush="#D6DCE6" BorderThickness="1" CornerRadius="14" Padding="16" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock x:Name="StatusTextBlock" FontWeight="SemiBold" Foreground="#172033" />
+                <TextBlock x:Name="DetailTextBlock" Margin="0,6,0,0" Foreground="#61708A" TextWrapping="Wrap" />
+                <TextBlock x:Name="ConnectedEmailTextBlock" Margin="0,8,0,0" Foreground="#33445F" FontWeight="SemiBold" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" Background="White" BorderBrush="#D6DCE6" BorderThickness="1" CornerRadius="14" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Client ID do Google" Foreground="#33445F" FontWeight="SemiBold" />
+                <TextBox x:Name="ClientIdTextBox" Grid.Row="1" Margin="0,8,0,14" Padding="10" />
+
+                <TextBlock Grid.Row="2" Text="Client Secret do Google" Foreground="#33445F" FontWeight="SemiBold" />
+                <PasswordBox x:Name="ClientSecretBox" Grid.Row="3" Margin="0,8,0,0" Padding="10" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3" Background="#E9EDF3" CornerRadius="14" Padding="16">
+            <TextBlock TextWrapping="Wrap" Foreground="#33445F">
+                Crie um cliente OAuth do tipo desktop no Google Cloud, informe o Client ID e, se existir, o Client Secret.
+                Ao clicar em Conectar, o navegador sera aberto para voce autorizar os escopos de leitura e marcadores do Gmail.
+            </TextBlock>
+        </Border>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Salvar" Click="Save_Click" Padding="14,8" Background="White" BorderBrush="#D6DCE6" Margin="0,0,8,0" />
+            <Button x:Name="DisconnectButton" Content="Desconectar" Click="Disconnect_Click" Padding="14,8" Background="#FCEBEA" Foreground="#A4382E" BorderThickness="0" Margin="0,0,8,0" />
+            <Button x:Name="SyncButton" Content="Sincronizar agora" Click="Sync_Click" Padding="14,8" Background="White" BorderBrush="#D6DCE6" Margin="0,0,8,0" />
+            <Button Content="Conectar" Click="Connect_Click" Padding="14,8" Background="#153A5B" Foreground="White" BorderThickness="0" />
+        </StackPanel>
+    </Grid>
+</Window>
