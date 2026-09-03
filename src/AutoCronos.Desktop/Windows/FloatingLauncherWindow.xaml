@@ -2,42 +2,121 @@
     x:Class="AutoCronos.Desktop.Windows.FloatingLauncherWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Width="64"
-    Height="64"
+    Width="160"
+    Height="320"
     WindowStyle="None"
     AllowsTransparency="True"
     Background="Transparent"
     Topmost="True"
     ShowInTaskbar="False"
     ResizeMode="NoResize">
-    <Grid>
+    <Window.Resources>
+        <Style x:Key="DotButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Canvas Width="160" Height="320">
         <Button
             x:Name="LauncherButton"
+            Canvas.Left="48"
+            Canvas.Top="218"
+            Width="64"
+            Height="64"
             Click="LauncherButton_Click"
             Cursor="Hand"
-            BorderThickness="0"
+            BorderBrush="White"
+            BorderThickness="2"
             Background="#153A5B"
-            Foreground="White"
-            FontSize="24"
-            Content="A"
-            ToolTip="AutoCronos">
+            ToolTip="Abrir navegação"
+            RenderTransformOrigin="0.5,0.5">
             <Button.Template>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="{TemplateBinding Background}" CornerRadius="32" BorderBrush="White" BorderThickness="2">
+                    <Border x:Name="Circle" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="32">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Circle" Property="Opacity" Value="0.86" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Button.Template>
+            <Button.RenderTransform>
+                <ScaleTransform x:Name="LauncherScale" ScaleX="1" ScaleY="1" />
+            </Button.RenderTransform>
         </Button>
 
-        <Popup x:Name="MenuPopup" PlacementTarget="{Binding ElementName=LauncherButton}" Placement="Left" StaysOpen="False">
-            <Border Background="White" CornerRadius="12" Padding="8" BorderBrush="#D6DCE6" BorderThickness="1">
-                <StackPanel Width="210">
-                    <Button Click="Board_Click" Content="Quadro de tarefas" Padding="12,9" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" />
-                    <Button Click="Email_Click" Content="Integracao de e-mail" Padding="12,9" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" />
-                    <Button Click="Warnings_Click" Content="Pendencias" Padding="12,9" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" />
-                </StackPanel>
-            </Border>
-        </Popup>
-    </Grid>
+        <Button
+            x:Name="BoardButton"
+            Canvas.Left="58"
+            Canvas.Top="228"
+            Style="{StaticResource DotButton}"
+            ToolTip="Quadro de tarefas"
+            IsHitTestVisible="False"
+            Click="Board_Click"
+            RenderTransformOrigin="0.5,0.5">
+            <Button.RenderTransform>
+                <TranslateTransform x:Name="BoardOffset" Y="-14" />
+            </Button.RenderTransform>
+            <Ellipse Width="16" Height="16" Fill="#2E7D5B" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <ScaleTransform x:Name="BoardDotScale" ScaleX="1" ScaleY="1" />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Button>
+
+        <Button
+            x:Name="EmailButton"
+            Canvas.Left="58"
+            Canvas.Top="228"
+            Style="{StaticResource DotButton}"
+            ToolTip="Integração de e-mail"
+            IsHitTestVisible="False"
+            Click="Email_Click"
+            RenderTransformOrigin="0.5,0.5">
+            <Button.RenderTransform>
+                <TranslateTransform x:Name="EmailOffset" />
+            </Button.RenderTransform>
+            <Ellipse Width="16" Height="16" Fill="#2563EB" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <ScaleTransform x:Name="EmailDotScale" ScaleX="1" ScaleY="1" />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Button>
+
+        <Button
+            x:Name="WarningsButton"
+            Canvas.Left="58"
+            Canvas.Top="228"
+            Style="{StaticResource DotButton}"
+            ToolTip="Pendências"
+            IsHitTestVisible="False"
+            Click="Warnings_Click"
+            RenderTransformOrigin="0.5,0.5">
+            <Button.RenderTransform>
+                <TranslateTransform x:Name="WarningsOffset" Y="14" />
+            </Button.RenderTransform>
+            <Ellipse Width="16" Height="16" Fill="#D97706" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <ScaleTransform x:Name="WarningsDotScale" ScaleX="1" ScaleY="1" />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Button>
+    </Canvas>
 </Window>
