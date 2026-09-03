@@ -10,6 +10,7 @@ public partial class App : System.Windows.Application
 {
     private readonly AutoCronos.Desktop.Services.LocalDataService _data = new();
     private DispatcherTimer? _emailSyncTimer;
+    private bool _emailSyncInProgress;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -18,6 +19,9 @@ public partial class App : System.Windows.Application
         new AutoCronos.Desktop.Services.StartupService().Enable();
         ConfigureEmailSyncTimer();
         new AutoCronos.Desktop.Windows.FloatingLauncherWindow(OpenBoard, OpenEmailSettings, OpenWarnings).Show();
+
+        if (!_data.GetEmailStatus().IsConnected)
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OpenEmailSettings));
     }
 
     private void OpenBoard()
@@ -53,8 +57,18 @@ public partial class App : System.Windows.Application
         _emailSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
         _emailSyncTimer.Tick += async (_, _) =>
         {
-            if (_data.GetEmailStatus().IsConnected)
+            if (_emailSyncInProgress || !_data.GetEmailStatus().IsConnected)
+                return;
+
+            _emailSyncInProgress = true;
+            try
+            {
                 await _data.SyncEmailAsync();
+            }
+            finally
+            {
+                _emailSyncInProgress = false;
+            }
         };
         _emailSyncTimer.Start();
     }
