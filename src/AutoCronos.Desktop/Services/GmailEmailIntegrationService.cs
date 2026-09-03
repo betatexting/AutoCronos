@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -15,6 +16,7 @@ namespace AutoCronos.Desktop.Services;
 public sealed class GmailEmailIntegrationService
 {
     private const string SettingsFileName = "gmail-integration.json";
+    private const string CredentialsDirectoryName = "secret_Key";
     private const string InboxLabelName = "AutoCronos/Entrada";
     private const string ProcessedLabelName = "AutoCronos/Processado";
     private const string PendingLabelName = "AutoCronos/Pendente";
@@ -27,6 +29,8 @@ public sealed class GmailEmailIntegrationService
     private readonly string _settingsPath;
 
     private GmailIntegrationSettings _settings;
+    private string _clientId = string.Empty;
+    private string _clientSecret = string.Empty;
     private string? _lastMessage;
 
     public GmailEmailIntegrationService()
@@ -35,14 +39,13 @@ public sealed class GmailEmailIntegrationService
         Directory.CreateDirectory(directory);
         _settingsPath = Path.Combine(directory, SettingsFileName);
         _settings = LoadSettings();
+        LoadProjectCredentials();
+        SaveSettings();
     }
-
-    public EmailSettingsSnapshot GetSettingsSnapshot() =>
-        new(_settings.ClientId, _settings.ClientSecret, _settings.EmailAddress, _settings.LastSyncAtUtc);
 
     public EmailConnectionStatus GetStatus()
     {
-        var isConfigured = !string.IsNullOrWhiteSpace(_settings.ClientId);
+        var isConfigured = !string.IsNullOrWhiteSpace(_clientId);
         var isConnected = isConfigured && !string.IsNullOrWhiteSpace(_settings.RefreshToken);
         var statusText = isConnected
             ? "Gmail conectado"
@@ -57,20 +60,10 @@ public sealed class GmailEmailIntegrationService
                 ? BuildConnectedDetail()
                 : isConfigured
                     ? "Use Conectar para autorizar o acesso a sua caixa."
-                    : "Informe o Client ID do Google para habilitar a integracao.";
+                    : "Adicione o JSON OAuth em secret_Key para habilitar a integracao.";
         }
 
         return new EmailConnectionStatus(isConfigured, isConnected, statusText, detailText, _settings.EmailAddress, _settings.LastSyncAtUtc);
-    }
-
-    public void SaveSettings(string clientId, string clientSecret)
-    {
-        _settings.ClientId = clientId.Trim();
-        _settings.ClientSecret = clientSecret.Trim();
-        SaveSettings();
-        _lastMessage = string.IsNullOrWhiteSpace(_settings.ClientId)
-            ? "Configuracao vazia. Preencha o Client ID do Google."
-            : "Configuracao do Gmail salva.";
     }
 
     public async Task<EmailConnectionStatus> ConnectAsync(CancellationToken cancellationToken = default)
@@ -78,9 +71,9 @@ public sealed class GmailEmailIntegrationService
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
-            if (string.IsNullOrWhiteSpace(_settings.ClientId))
+            if (string.IsNullOrWhiteSpace(_clientId))
             {
-                _lastMessage = "Preencha o Client ID antes de conectar.";
+                _lastMessage = "Adicione o JSON OAuth em secret_Key antes de conectar.";
                 return GetStatus();
             }
 
@@ -129,7 +122,7 @@ public sealed class GmailEmailIntegrationService
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
-            if (string.IsNullOrWhiteSpace(_settings.ClientId) || string.IsNullOrWhiteSpace(_settings.RefreshToken))
+            if (string.IsNullOrWhiteSpace(_clientId) || string.IsNullOrWhiteSpace(_settings.RefreshToken))
             {
                 var message = "Conecte uma conta do Gmail antes de sincronizar.";
                 _lastMessage = message;
@@ -206,9 +199,9 @@ public sealed class GmailEmailIntegrationService
         }
     }
 
-    public async Task MarkPendingMessageHandledAsync(string providerMessageId, CancellationToken cancellationToken = default)
+    public async Task MarkPendingMessageHandledAsync(string providerMessageId, bool approved, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_settings.ClientId) || string.IsNullOrWhiteSpace(_settings.RefreshToken) || string.IsNullOrWhiteSpace(providerMessageId))
+        if (string.IsNullOrWhiteSpace(_clientId) || string.IsNullOrWhiteSpace(_settings.RefreshToken) || string.IsNullOrWhiteSpace(providerMessageId))
             return;
 
         await _syncLock.WaitAsync(cancellationToken);
@@ -216,7 +209,13 @@ public sealed class GmailEmailIntegrationService
         {
             var accessToken = await RefreshAccessTokenAsync(cancellationToken);
             var labels = await EnsureLabelsAsync(accessToken, cancellationToken);
-            await ModifyLabelsAsync(accessToken, providerMessageId, [labels.InboxLabelId, labels.ProcessedLabelId], [labels.PendingLabelId, labels.IgnoredLabelId], cancellationToken);
+            var finalLabelId = approved ? labels.ProcessedLabelId : labels.IgnoredLabelId;
+            await ModifyLabelsAsync(
+                accessToken,
+                providerMessageId,
+                [labels.InboxLabelId, finalLabelId],
+                [labels.PendingLabelId, labels.ProcessedLabelId, labels.IgnoredLabelId],
+                cancellationToken);
             _lastMessage = "Marcadores do Gmail atualizados apos a decisao da pendencia.";
         }
         catch (Exception exception)
@@ -239,11 +238,12 @@ public sealed class GmailEmailIntegrationService
 
         var verifier = CreateCodeVerifier();
         var challenge = CreateCodeChallenge(verifier);
+        var state = CreateOAuthState();
         var scope = Uri.EscapeDataString("openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels");
         var authorizationUrl =
-            $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(_settings.ClientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}&access_type=offline&prompt=consent&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
+            $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(_clientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}&access_type=offline&prompt=consent&state={Uri.EscapeDataString(state)}&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
 
-        Process.Start(new ProcessStartInfo(authorizationUrl) { UseShellExecute = true });
+        System.Diagnostics.Process.Start(new ProcessStartInfo(authorizationUrl) { UseShellExecute = true });
 
         var contextTask = listener.GetContextAsync();
         var completedTask = await Task.WhenAny(contextTask, Task.Delay(TimeSpan.FromMinutes(3), cancellationToken));
@@ -253,10 +253,16 @@ public sealed class GmailEmailIntegrationService
         var context = await contextTask;
         var authorizationCode = context.Request.QueryString["code"];
         var error = context.Request.QueryString["error"];
-        await RespondToBrowserAsync(context.Response, error is null, cancellationToken);
+        var returnedState = context.Request.QueryString["state"];
+        var stateIsValid = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(state),
+            Encoding.UTF8.GetBytes(returnedState ?? string.Empty));
+        await RespondToBrowserAsync(context.Response, error is null && stateIsValid, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(error))
             throw new InvalidOperationException($"O Google recusou a autorizacao: {error}.");
+        if (!stateIsValid)
+            throw new InvalidOperationException("O retorno da autorizacao nao corresponde a solicitacao iniciada pelo AutoCronos.");
         if (string.IsNullOrWhiteSpace(authorizationCode))
             throw new InvalidOperationException("O Google nao retornou o codigo de autorizacao.");
 
@@ -272,8 +278,8 @@ public sealed class GmailEmailIntegrationService
     {
         var values = new Dictionary<string, string?>
         {
-            ["client_id"] = _settings.ClientId,
-            ["client_secret"] = string.IsNullOrWhiteSpace(_settings.ClientSecret) ? null : _settings.ClientSecret,
+            ["client_id"] = _clientId,
+            ["client_secret"] = string.IsNullOrWhiteSpace(_clientSecret) ? null : _clientSecret,
             ["refresh_token"] = _settings.RefreshToken,
             ["grant_type"] = "refresh_token"
         };
@@ -292,8 +298,8 @@ public sealed class GmailEmailIntegrationService
     {
         var values = new Dictionary<string, string?>
         {
-            ["client_id"] = _settings.ClientId,
-            ["client_secret"] = string.IsNullOrWhiteSpace(_settings.ClientSecret) ? null : _settings.ClientSecret,
+            ["client_id"] = _clientId,
+            ["client_secret"] = string.IsNullOrWhiteSpace(_clientSecret) ? null : _clientSecret,
             ["code"] = authorizationCode,
             ["code_verifier"] = verifier,
             ["grant_type"] = "authorization_code",
@@ -637,6 +643,13 @@ public sealed class GmailEmailIntegrationService
         return Base64UrlEncode(bytes);
     }
 
+    private static string CreateOAuthState()
+    {
+        Span<byte> bytes = stackalloc byte[24];
+        RandomNumberGenerator.Fill(bytes);
+        return Base64UrlEncode(bytes);
+    }
+
     private static string CreateCodeChallenge(string verifier)
     {
         var hash = SHA256.HashData(Encoding.ASCII.GetBytes(verifier));
@@ -662,6 +675,62 @@ public sealed class GmailEmailIntegrationService
         }
     }
 
+    private void LoadProjectCredentials()
+    {
+        var credentialsPath = FindProjectCredentialsPath();
+        if (credentialsPath is null)
+            return;
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(credentialsPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("web", out _))
+                throw new InvalidOperationException("O JSON deve conter um cliente OAuth do tipo Aplicativo para computador.");
+
+            var credentials = root.TryGetProperty("installed", out var installed) ? installed : root;
+            if (!credentials.TryGetProperty("client_id", out var clientIdElement) ||
+                string.IsNullOrWhiteSpace(clientIdElement.GetString()))
+                throw new InvalidOperationException("O JSON nao contem um Client ID do Google.");
+
+            var clientId = clientIdElement.GetString()!.Trim();
+            var clientSecret = credentials.TryGetProperty("client_secret", out var clientSecretElement)
+                ? clientSecretElement.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+
+            _clientId = clientId;
+            _clientSecret = clientSecret;
+            _lastMessage = null;
+        }
+        catch (Exception exception)
+        {
+            _lastMessage = $"Nao foi possivel carregar as credenciais de secret_Key: {SimplifyException(exception)}";
+        }
+    }
+
+    private static string? FindProjectCredentialsPath()
+    {
+        var searchedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var startingDirectory in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(startingDirectory);
+            while (directory is not null && searchedDirectories.Add(directory.FullName))
+            {
+                var credentialsDirectory = Path.Combine(directory.FullName, CredentialsDirectoryName);
+                if (Directory.Exists(credentialsDirectory))
+                {
+                    var files = Directory.GetFiles(credentialsDirectory, "*.json", SearchOption.TopDirectoryOnly);
+                    if (files.Length == 1)
+                        return files[0];
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        return null;
+    }
+
     private void SaveSettings()
     {
         var json = JsonSerializer.Serialize(_settings, JsonOptions);
@@ -684,8 +753,6 @@ public sealed class GmailEmailIntegrationService
 
     private sealed class GmailIntegrationSettings
     {
-        public string ClientId { get; set; } = string.Empty;
-        public string ClientSecret { get; set; } = string.Empty;
         public string? RefreshToken { get; set; }
         public string? EmailAddress { get; set; }
         public DateTime? LastSyncAtUtc { get; set; }

@@ -13,18 +13,10 @@ public partial class EmailSettingsWindow : Window
         InitializeComponent();
         _data.StateChanged += Data_StateChanged;
         Closed += (_, _) => _data.StateChanged -= Data_StateChanged;
-        LoadSettings();
         RefreshStatus();
     }
 
     private void Data_StateChanged(object? sender, EventArgs e) => Dispatcher.Invoke(RefreshStatus);
-
-    private void LoadSettings()
-    {
-        var settings = _data.GetEmailSettings();
-        ClientIdTextBox.Text = settings.ClientId;
-        ClientSecretBox.Password = settings.ClientSecret;
-    }
 
     private void RefreshStatus()
     {
@@ -39,24 +31,21 @@ public partial class EmailSettingsWindow : Window
         SyncButton.IsEnabled = status.IsConnected;
     }
 
-    private void SaveSettings()
-    {
-        _data.SaveEmailSettings(ClientIdTextBox.Text, ClientSecretBox.Password);
-        RefreshStatus();
-    }
-
-    private void Save_Click(object sender, RoutedEventArgs e)
-    {
-        SaveSettings();
-        MessageBox.Show(this, "Configuracao do Gmail salva.", "Integracao de e-mail", MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
-        SaveSettings();
-        var status = await _data.ConnectEmailAsync();
-        RefreshStatus();
-        MessageBox.Show(this, status.DetailText, "Integracao de e-mail", MessageBoxButton.OK, status.IsConnected ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        ConnectButton.IsEnabled = false;
+        StatusTextBlock.Text = "Aguardando autorizacao no Google";
+        DetailTextBlock.Text = "Conclua o acesso na janela do navegador. O AutoCronos continuara automaticamente depois disso.";
+        try
+        {
+            var status = await _data.ConnectEmailAsync();
+            RefreshStatus();
+            MessageBox.Show(this, status.DetailText, "Integracao de e-mail", MessageBoxButton.OK, status.IsConnected ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        finally
+        {
+            ConnectButton.IsEnabled = true;
+        }
     }
 
     private async void Disconnect_Click(object sender, RoutedEventArgs e)

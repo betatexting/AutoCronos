@@ -45,20 +45,12 @@ public sealed class LocalDataService
         new ApprovalDecisionService(database).Resolve(approvalId, approve);
         RefreshViews(database);
         if (!string.IsNullOrWhiteSpace(providerMessageId))
-            await _gmail.MarkPendingMessageHandledAsync(providerMessageId, cancellationToken);
+            await _gmail.MarkPendingMessageHandledAsync(providerMessageId, approve, cancellationToken);
 
         OnStateChanged();
     }
-
-    public EmailSettingsSnapshot GetEmailSettings() => _gmail.GetSettingsSnapshot();
 
     public EmailConnectionStatus GetEmailStatus() => _gmail.GetStatus();
-
-    public void SaveEmailSettings(string clientId, string clientSecret)
-    {
-        _gmail.SaveSettings(clientId, clientSecret);
-        OnStateChanged();
-    }
 
     public async Task<EmailConnectionStatus> ConnectEmailAsync(CancellationToken cancellationToken = default)
     {

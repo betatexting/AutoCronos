@@ -1,0 +1,9 @@
+# Executar
+
+dotnet run --project .\src\AutoCronos.Desktop\AutoCronos.Desktop.csproj
+
+# Credenciais do Google
+
+Coloque um unico arquivo JSON de credenciais OAuth do tipo **Aplicativo para computador** em `secret_Key/`, na raiz do repositorio.
+O AutoCronos o localiza e carrega automaticamente ao iniciar. A pasta e ignorada pelo Git.
+
