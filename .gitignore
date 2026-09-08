@@ -1,3 +1,5 @@
 # Credenciais OAuth locais do Google.
 /secret_Key/
 **/gmail-integration.json
+**/bin/
+**/obj/
