@@ -29,16 +29,32 @@ public partial class EmailSettingsWindow : Window
 
         DisconnectButton.IsEnabled = status.IsConnected;
         SyncButton.IsEnabled = status.IsConnected;
+        ConnectButton.IsEnabled = status.IsConfigured;
+        ConnectButton.Content = status.IsConnected ? "Conectar outra conta" : "Conectar com Google";
     }
 
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
+        var isChangingAccount = _data.GetEmailStatus().IsConnected;
+        if (isChangingAccount &&
+            MessageBox.Show(
+                this,
+                "Deseja conectar outra conta? A integracao passara a usar a conta escolhida no Google.",
+                "Conectar outra conta",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
         ConnectButton.IsEnabled = false;
-        StatusTextBlock.Text = "Aguardando autorizacao no Google";
-        DetailTextBlock.Text = "Conclua o acesso na janela do navegador. O AutoCronos continuara automaticamente depois disso.";
+        StatusTextBlock.Text = isChangingAccount ? "Escolha a nova conta no Google" : "Aguardando autorizacao no Google";
+        DetailTextBlock.Text = isChangingAccount
+            ? "Selecione a conta que passara a ser usada pelo AutoCronos na janela do navegador."
+            : "Conclua o acesso na janela do navegador. O AutoCronos continuara automaticamente depois disso.";
         try
         {
-            var status = await _data.ConnectEmailAsync();
+            var status = isChangingAccount
+                ? await _data.ConnectAnotherEmailAsync()
+                : await _data.ConnectEmailAsync();
             RefreshStatus();
             MessageBox.Show(this, status.DetailText, "Integracao de e-mail", MessageBoxButton.OK, status.IsConnected ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }

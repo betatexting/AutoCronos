@@ -21,7 +21,11 @@ public sealed class GmailEmailIntegrationService
     private const string ProcessedLabelName = "AutoCronos/Processado";
     private const string PendingLabelName = "AutoCronos/Pendente";
     private const string IgnoredLabelName = "AutoCronos/Ignorado";
+    private const string ExternalProcessedLabelName = "processado";
+    private const long ExternalProcessedRecoveryStartEpochSeconds = 1785553199;
+    private const long ExternalProcessedRecoveryEndEpochSeconds = 1790823600;
     private const int MaxMessagesPerSync = 25;
+    private const int MaxMessagesPerPage = 500;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly HttpClient _httpClient = new();
@@ -66,7 +70,13 @@ public sealed class GmailEmailIntegrationService
         return new EmailConnectionStatus(isConfigured, isConnected, statusText, detailText, _settings.EmailAddress, _settings.LastSyncAtUtc);
     }
 
-    public async Task<EmailConnectionStatus> ConnectAsync(CancellationToken cancellationToken = default)
+    public Task<EmailConnectionStatus> ConnectAsync(CancellationToken cancellationToken = default) =>
+        ConnectAsync(selectAnotherAccount: false, cancellationToken);
+
+    public Task<EmailConnectionStatus> ConnectAnotherAccountAsync(CancellationToken cancellationToken = default) =>
+        ConnectAsync(selectAnotherAccount: true, cancellationToken);
+
+    private async Task<EmailConnectionStatus> ConnectAsync(bool selectAnotherAccount, CancellationToken cancellationToken)
     {
         await _syncLock.WaitAsync(cancellationToken);
         try
@@ -77,9 +87,15 @@ public sealed class GmailEmailIntegrationService
                 return GetStatus();
             }
 
-            var authorization = await AuthorizeAsync(cancellationToken);
+            var authorization = await AuthorizeAsync(selectAnotherAccount, cancellationToken);
+            var accountChanged = !string.Equals(_settings.EmailAddress, authorization.EmailAddress, StringComparison.OrdinalIgnoreCase);
             _settings.RefreshToken = authorization.RefreshToken;
             _settings.EmailAddress = authorization.EmailAddress;
+            if (accountChanged)
+            {
+                _settings.LastSyncAtUtc = null;
+                _settings.ExternalProcessedAugustSeptemberRecoveryCompletedAtUtc = null;
+            }
             SaveSettings();
 
             await EnsureLabelsAsync(authorization.AccessToken, cancellationToken);
@@ -131,14 +147,20 @@ public sealed class GmailEmailIntegrationService
 
             var accessToken = await RefreshAccessTokenAsync(cancellationToken);
             var labels = await EnsureLabelsAsync(accessToken, cancellationToken);
+            var recoveryMessageIds = await GetExternalProcessedRecoveryMessageIdsAsync(accessToken, cancellationToken);
             var query = BuildSearchQuery(subjectPatterns);
-            var messageIds = await SearchMessagesAsync(accessToken, query, cancellationToken);
+            var messageIds = recoveryMessageIds
+                .Concat(await SearchMessagesAsync(accessToken, query, cancellationToken))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var recoveryMessageIdSet = recoveryMessageIds.ToHashSet(StringComparer.Ordinal);
 
             var scanned = 0;
             var createdProcesses = 0;
             var createdApprovals = 0;
             var ignoredMessages = 0;
             var failedMessages = 0;
+            var failedRecoveryMessages = 0;
 
             foreach (var messageId in messageIds)
             {
@@ -173,9 +195,13 @@ public sealed class GmailEmailIntegrationService
                 catch (Exception exception)
                 {
                     failedMessages++;
+                    if (recoveryMessageIdSet.Contains(messageId)) failedRecoveryMessages++;
                     _lastMessage = $"Ultima falha na sincronizacao: {SimplifyException(exception)}";
                 }
             }
+
+            if (_settings.ExternalProcessedAugustSeptemberRecoveryCompletedAtUtc is null && failedRecoveryMessages == 0)
+                _settings.ExternalProcessedAugustSeptemberRecoveryCompletedAtUtc = DateTime.UtcNow;
 
             _settings.LastSyncAtUtc = DateTime.UtcNow;
             SaveSettings();
@@ -183,6 +209,10 @@ public sealed class GmailEmailIntegrationService
             var summary = scanned == 0
                 ? "Sincronizacao concluida. Nenhum e-mail novo encontrado para as regras monitoradas."
                 : $"Sincronizacao concluida: {scanned} e-mail(s), {createdProcesses} processo(s), {createdApprovals} pendencia(s), {ignoredMessages} ignorado(s), {failedMessages} falha(s).";
+            if (recoveryMessageIds.Count > 0)
+                summary += failedRecoveryMessages == 0
+                    ? $" Retomada: {recoveryMessageIds.Count} e-mail(s) de agosto e setembro de 2026 com o marcador externo '{ExternalProcessedLabelName}' foram analisados."
+                    : $" Retomada: {recoveryMessageIds.Count - failedRecoveryMessages} de {recoveryMessageIds.Count} e-mail(s) de agosto e setembro de 2026 foram analisados; {failedRecoveryMessages} falharam e serao tentados novamente.";
 
             _lastMessage = summary;
             return new EmailSyncSummary(failedMessages == 0, false, scanned, createdProcesses, createdApprovals, ignoredMessages, failedMessages, summary);
@@ -228,7 +258,39 @@ public sealed class GmailEmailIntegrationService
         }
     }
 
-    private async Task<GmailAuthorizationResult> AuthorizeAsync(CancellationToken cancellationToken)
+    public async Task MarkMessageIgnoredAsync(string providerMessageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_clientId) || string.IsNullOrWhiteSpace(_settings.RefreshToken))
+            throw new InvalidOperationException("Conecte uma conta do Gmail antes de excluir o card.");
+        if (string.IsNullOrWhiteSpace(providerMessageId))
+            throw new InvalidOperationException("O e-mail de origem do card nao foi localizado.");
+
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            var accessToken = await RefreshAccessTokenAsync(cancellationToken);
+            var labels = await EnsureLabelsAsync(accessToken, cancellationToken);
+            var threadId = await GetThreadIdAsync(accessToken, providerMessageId, cancellationToken);
+            await ModifyThreadLabelsAsync(
+                accessToken,
+                threadId,
+                [labels.InboxLabelId, labels.IgnoredLabelId],
+                [labels.PendingLabelId, labels.ProcessedLabelId, labels.IgnoredLabelId],
+                cancellationToken);
+            _lastMessage = "Marcadores do Gmail atualizados em toda a conversa apos a exclusao do card.";
+        }
+        catch (Exception exception)
+        {
+            _lastMessage = $"Falha ao marcar o e-mail como ignorado: {SimplifyException(exception)}";
+            throw;
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
+    }
+
+    private async Task<GmailAuthorizationResult> AuthorizeAsync(bool selectAnotherAccount, CancellationToken cancellationToken)
     {
         var redirectPort = GetAvailablePort();
         var redirectUri = $"http://127.0.0.1:{redirectPort}/";
@@ -240,8 +302,9 @@ public sealed class GmailEmailIntegrationService
         var challenge = CreateCodeChallenge(verifier);
         var state = CreateOAuthState();
         var scope = Uri.EscapeDataString("openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.labels");
+        var prompt = selectAnotherAccount ? "select_account consent" : "consent";
         var authorizationUrl =
-            $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(_clientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}&access_type=offline&prompt=consent&state={Uri.EscapeDataString(state)}&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
+            $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(_clientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={scope}&access_type=offline&prompt={Uri.EscapeDataString(prompt)}&state={Uri.EscapeDataString(state)}&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256";
 
         System.Diagnostics.Process.Start(new ProcessStartInfo(authorizationUrl) { UseShellExecute = true });
 
@@ -402,6 +465,44 @@ public sealed class GmailEmailIntegrationService
             .ToList();
     }
 
+    private async Task<IReadOnlyList<string>> GetExternalProcessedRecoveryMessageIdsAsync(string accessToken, CancellationToken cancellationToken)
+    {
+        if (_settings.ExternalProcessedAugustSeptemberRecoveryCompletedAtUtc is not null)
+            return [];
+
+        var query = $"label:\"{ExternalProcessedLabelName}\" -label:\"{ProcessedLabelName}\" -label:\"{PendingLabelName}\" -label:\"{IgnoredLabelName}\" after:{ExternalProcessedRecoveryStartEpochSeconds} before:{ExternalProcessedRecoveryEndEpochSeconds}";
+        return await SearchAllMessagesAsync(accessToken, query, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> SearchAllMessagesAsync(string accessToken, string query, CancellationToken cancellationToken)
+    {
+        var messageIds = new List<string>();
+        string? pageToken = null;
+        do
+        {
+            var pageTokenQuery = string.IsNullOrWhiteSpace(pageToken) ? string.Empty : $"&pageToken={Uri.EscapeDataString(pageToken)}";
+            var url = $"https://gmail.googleapis.com/gmail/v1/users/me/messages?q={Uri.EscapeDataString(query)}&maxResults={MaxMessagesPerPage}{pageTokenQuery}";
+            using var request = CreateAuthorizedRequest(HttpMethod.Get, url, accessToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var document = await ReadJsonAsync(response, cancellationToken);
+
+            if (document.RootElement.TryGetProperty("messages", out var messagesElement))
+            {
+                messageIds.AddRange(messagesElement
+                    .EnumerateArray()
+                    .Select(messageElement => messageElement.TryGetProperty("id", out var idElement) ? idElement.GetString() : null)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Cast<string>());
+            }
+
+            pageToken = document.RootElement.TryGetProperty("nextPageToken", out var nextPageTokenElement)
+                ? nextPageTokenElement.GetString()
+                : null;
+        } while (!string.IsNullOrWhiteSpace(pageToken));
+
+        return messageIds;
+    }
+
     private async Task<GmailMessage> GetMessageAsync(string accessToken, string messageId, CancellationToken cancellationToken)
     {
         var url = $"https://gmail.googleapis.com/gmail/v1/users/me/messages/{messageId}?format=full";
@@ -418,6 +519,14 @@ public sealed class GmailEmailIntegrationService
         return new GmailMessage(messageId, subject, body, internalDate);
     }
 
+    private async Task<string> GetThreadIdAsync(string accessToken, string messageId, CancellationToken cancellationToken)
+    {
+        using var request = CreateAuthorizedRequest(HttpMethod.Get, $"https://gmail.googleapis.com/gmail/v1/users/me/messages/{messageId}?format=minimal", accessToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var document = await ReadJsonAsync(response, cancellationToken);
+        return GetRequiredString(document.RootElement, "threadId");
+    }
+
     private async Task ModifyLabelsAsync(string accessToken, string messageId, IReadOnlyCollection<string> addLabelIds, IReadOnlyCollection<string> removeLabelIds, CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.Serialize(new
@@ -432,10 +541,23 @@ public sealed class GmailEmailIntegrationService
         response.EnsureSuccessStatusCode();
     }
 
+    private async Task ModifyThreadLabelsAsync(string accessToken, string threadId, IReadOnlyCollection<string> addLabelIds, IReadOnlyCollection<string> removeLabelIds, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            addLabelIds = addLabelIds.Distinct(StringComparer.Ordinal).ToArray(),
+            removeLabelIds = removeLabelIds.Except(addLabelIds, StringComparer.Ordinal).ToArray()
+        });
+        using var request = CreateAuthorizedRequest(HttpMethod.Post, $"https://gmail.googleapis.com/gmail/v1/users/me/threads/{threadId}/modify", accessToken);
+        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
     private static EmailInput ConvertToEmailInput(GmailMessage message)
     {
         var taxId = ExtractTaxId(message.Subject, message.Body);
-        var companyName = ExtractCompanyName(message.Body);
+        var companyName = EmailCompanyNameExtractor.Extract(message.Subject, message.Body);
         var competence = ExtractCompetence(message.Subject, message.Body);
         return new EmailInput(message.Id, message.Subject, taxId, companyName, competence, message.ReceivedAtUtc);
     }
@@ -448,26 +570,6 @@ public sealed class GmailEmailIntegrationService
             .ToList();
 
         return candidates.FirstOrDefault();
-    }
-
-    private static string? ExtractCompanyName(string body)
-    {
-        foreach (var pattern in new[]
-                 {
-                     @"(?:razao social|raz.o social|empresa|contribuinte)\s*[:\-]\s*(?<value>[^\r\n]+)",
-                     @"(?:nome empresarial|nome fantasia)\s*[:\-]\s*(?<value>[^\r\n]+)"
-                 })
-        {
-            var match = Regex.Match(body, pattern, RegexOptions.IgnoreCase);
-            if (!match.Success)
-                continue;
-
-            var value = match.Groups["value"].Value.Trim();
-            if (!string.IsNullOrWhiteSpace(value))
-                return value;
-        }
-
-        return null;
     }
 
     private static string? ExtractCompetence(string subject, string body)
@@ -753,6 +855,7 @@ public sealed class GmailEmailIntegrationService
 
     private sealed class GmailIntegrationSettings
     {
+        public DateTime? ExternalProcessedAugustSeptemberRecoveryCompletedAtUtc { get; set; }
         public string? RefreshToken { get; set; }
         public string? EmailAddress { get; set; }
         public DateTime? LastSyncAtUtc { get; set; }

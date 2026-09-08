@@ -35,6 +35,9 @@
                     O Client ID e o Client Secret sao lidos somente do JSON local em secret_Key.
                     Os valores nao sao exibidos, nao sao copiados para as configuracoes salvas e nao entram no historico do Git.
                 </TextBlock>
+                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#61708A">
+                    Para usar outra conta, escolha Conectar outra conta. As mesmas credenciais da aplicacao serao usadas e o Google pedira a selecao da conta.
+                </TextBlock>
             </StackPanel>
         </Border>
 

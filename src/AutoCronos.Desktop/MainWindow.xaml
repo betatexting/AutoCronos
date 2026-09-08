@@ -16,8 +16,37 @@
 
         <DockPanel Margin="0,0,0,22" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left">
-                <TextBlock Text="Devolucoes" FontSize="28" FontWeight="SemiBold" Foreground="#172033" />
+                <TextBlock x:Name="BoardTitleTextBlock" Text="Devolucoes" FontSize="28" FontWeight="SemiBold" Foreground="#172033" />
                 <TextBlock Text="Quadro de tarefas e integracao de e-mail" FontSize="14" Foreground="#61708A" Margin="0,4,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <ComboBox
+                        x:Name="BoardComboBox"
+                        Width="230"
+                        Padding="8,5"
+                        DisplayMemberPath="Name"
+                        SelectionChanged="BoardComboBox_SelectionChanged" />
+                    <Button
+                        x:Name="DeleteBoardButton"
+                        Content="Excluir quadro"
+                        Click="DeleteBoard_Click"
+                        IsEnabled="False"
+                        Padding="10,5"
+                        Margin="8,0,0,0"
+                        Background="White"
+                        BorderBrush="#D6DCE6" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="Selecione um card para mover ou excluir." VerticalAlignment="Center" FontSize="12" Foreground="#61708A" />
+                    <Button
+                        x:Name="DeleteSelectedCardButton"
+                        Content="Excluir card"
+                        Click="DeleteSelectedCard_Click"
+                        IsEnabled="False"
+                        Padding="10,5"
+                        Margin="12,0,0,0"
+                        Background="White"
+                        BorderBrush="#D6DCE6" />
+                </StackPanel>
             </StackPanel>
 
             <Border
@@ -40,14 +69,6 @@
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button
-                            x:Name="ManageEmailButton"
-                            Content="Configurar e-mail"
-                            Click="ManageEmail_Click"
-                            Padding="12,7"
-                            Margin="0,0,8,0"
-                            Background="White"
-                            BorderBrush="#D6DCE6" />
-                        <Button
                             x:Name="SyncEmailButton"
                             Content="Sincronizar"
                             Click="SyncEmail_Click"
@@ -60,7 +81,8 @@
             </Border>
         </DockPanel>
 
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <ScrollViewer x:Name="BoardHorizontalScrollViewer" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal">
             <ItemsControl x:Name="ColumnsItemsControl">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -69,27 +91,143 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="260" Margin="0,0,16,0" Background="#E9EDF3" CornerRadius="14" Padding="13">
+                        <Border
+                            Width="260"
+                            Height="{Binding ActualHeight, ElementName=BoardHorizontalScrollViewer}"
+                            Margin="0,0,16,0"
+                            Background="#E9EDF3"
+                            CornerRadius="14"
+                            Padding="13"
+                            AllowDrop="True"
+                            DragOver="Column_DragOver"
+                            Drop="Column_Drop">
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Top" Text="{Binding Name}" FontWeight="SemiBold" Foreground="#27344B" Margin="0,0,0,12" />
-                                <ItemsControl ItemsSource="{Binding Cards}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="White" CornerRadius="10" Padding="13" Margin="0,0,0,10">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding CompanyName}" FontWeight="SemiBold" Foreground="#172033" TextWrapping="Wrap" />
-                                                    <TextBlock Text="{Binding TaxId}" Margin="0,4,0,0" Foreground="#61708A" FontSize="12" />
-                                                    <TextBlock Text="{Binding DeadlineLabel}" Margin="0,10,0,0" Foreground="#B25B13" FontWeight="SemiBold" FontSize="12" />
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#27344B" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <Button
+                                        Grid.Column="1"
+                                        Content="+"
+                                        Tag="{Binding}"
+                                        Click="AddManualCard_Click"
+                                        ToolTip="Criar card manualmente"
+                                        Width="26"
+                                        Height="26"
+                                        Margin="6,0,0,0"
+                                        Padding="0"
+                                        Background="White"
+                                        BorderBrush="#C9D2DE"
+                                        Foreground="#153A5B"
+                                        FontSize="17"
+                                        FontWeight="SemiBold">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding AllowsManualCard}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <Button
+                                        Grid.Column="2"
+                                        Content="&#x00D7;"
+                                        Tag="{Binding}"
+                                        Click="DeleteColumn_Click"
+                                        ToolTip="Excluir coluna"
+                                        Width="26"
+                                        Height="26"
+                                        Margin="6,0,0,0"
+                                        Padding="0"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="#A4382E"
+                                        FontSize="17" />
+                                </Grid>
+                                <ScrollViewer
+                                    VerticalScrollBarVisibility="Hidden"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    PanningMode="VerticalOnly"
+                                    PreviewMouseWheel="ColumnCards_PreviewMouseWheel">
+                                    <ItemsControl ItemsSource="{Binding Cards}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border
+                                                    CornerRadius="10"
+                                                    Padding="13"
+                                                    Margin="0,0,0,10"
+                                                    Cursor="SizeAll"
+                                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown"
+                                                    MouseLeftButtonUp="Card_MouseLeftButtonUp"
+                                                    MouseMove="Card_MouseMove">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="White" />
+                                                            <Setter Property="BorderBrush" Value="Transparent" />
+                                                            <Setter Property="BorderThickness" Value="1" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="BorderBrush" Value="#356D9E" />
+                                                                    <Setter Property="BorderThickness" Value="2" />
+                                                                    <Setter Property="Background" Value="#F2F8FC" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayCompanyName}" FontWeight="SemiBold" Foreground="#172033" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{Binding TaxId}" Margin="0,4,0,0" Foreground="#61708A" FontSize="12" />
+                                                            <TextBlock Text="{Binding DeadlineLabel}" Margin="0,10,0,0" Foreground="#B25B13" FontWeight="SemiBold" FontSize="12" />
+                                                        </StackPanel>
+                                                        <Button
+                                                            Grid.Column="1"
+                                                            Content="×"
+                                                            Tag="{Binding}"
+                                                            Click="DeleteCard_Click"
+                                                            ToolTip="Excluir card"
+                                                            Width="22"
+                                                            Height="22"
+                                                            Margin="8,0,0,0"
+                                                            Padding="0"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Foreground="#A4382E"
+                                                            FontSize="16" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </DockPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+                <Button
+                    Content="+  Nova coluna"
+                    Click="AddColumn_Click"
+                    Width="150"
+                    Height="46"
+                    Margin="0,4,18,0"
+                    Padding="12,7"
+                    VerticalAlignment="Top"
+                    Background="White"
+                    BorderBrush="#C9D2DE"
+                    Foreground="#153A5B"
+                    FontWeight="SemiBold" />
+            </StackPanel>
         </ScrollViewer>
     </Grid>
 </Window>

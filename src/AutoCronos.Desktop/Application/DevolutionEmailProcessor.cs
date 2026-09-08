@@ -20,6 +20,7 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
         var operation = database.Operations
             .Include(x => x.EmailRules)
             .Include(x => x.DeadlineRules)
+            .Include(x => x.Columns)
             .SingleOrDefault(x => x.Name == "Devolucoes" && x.IsActive);
         if (operation is null) return new(false, false, null, "Operacao Devolucoes nao configurada.");
 
@@ -62,10 +63,12 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
 
     private void CreateProcess(OperationDefinition operation, IncomingEmail email)
     {
+        var initialColumn = operation.Columns.OrderBy(column => column.SortOrder).FirstOrDefault()
+            ?? throw new InvalidOperationException("O quadro Devolucoes nao possui uma coluna inicial.");
         var occurrence = new ProcessOccurrence
         {
             Number = 1,
-            CurrentColumn = "Informativo Recebido",
+            CurrentColumn = initialColumn.Name,
             ReceivedAtUtc = email.ReceivedAtUtc,
             Competence = email.Competence,
             DeadlineAtUtc = CalculateDeadline(operation, EmailEventType.InitialNotice, email.ReceivedAtUtc),

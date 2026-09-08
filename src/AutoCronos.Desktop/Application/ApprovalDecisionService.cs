@@ -36,10 +36,16 @@ public sealed class ApprovalDecisionService(AutoCronosDbContext database)
             }
             else if (approval.Type == ApprovalType.ReactivateProcess)
             {
+                var initialColumn = database.KanbanColumns
+                    .Where(column => column.OperationDefinitionId == process.OperationDefinitionId)
+                    .OrderBy(column => column.SortOrder)
+                    .Select(column => column.Name)
+                    .FirstOrDefault()
+                    ?? throw new InvalidOperationException("O quadro nao possui uma coluna inicial.");
                 process.Occurrences.Add(new ProcessOccurrence
                 {
                     Number = process.Occurrences.Count + 1,
-                    CurrentColumn = "Informativo Recebido",
+                    CurrentColumn = initialColumn,
                     ReceivedAtUtc = email.ReceivedAtUtc,
                     Competence = email.Competence,
                     History = [History("ProcessoReativado", "Nova ocorrencia criada por reativacao aprovada.")]
