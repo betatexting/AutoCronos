@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AutoCronos.Desktop.Application;
 
-public sealed record EmailInput(string ProviderMessageId, string Subject, string? TaxId, string? CompanyName, string? Competence, DateTime ReceivedAtUtc);
+public sealed record EmailInput(string ProviderMessageId, string Subject, string? TaxId, string? CompanyName, string? Competence, DateTime ReceivedAtUtc, string Sender, string Body, bool IsReply);
 public sealed record EmailProcessingResult(bool AlreadyProcessed, bool CreatedProcess, Guid? ApprovalId, string Message);
 
 /// <summary>Applies the configured Devolucoes rules without coupling business decisions to Gmail.</summary>
@@ -74,12 +74,19 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
             DeadlineAtUtc = CalculateDeadline(operation, EmailEventType.InitialNotice, email.ReceivedAtUtc),
             History = [new() { CreatedAtUtc = DateTime.UtcNow, EventType = "InformativoRecebido", Description = "Processo criado pelo informativo inicial." }]
         };
-        database.Processes.Add(new Process
+        var process = new Process
         {
             OperationDefinitionId = operation.Id,
             TaxId = email.TaxId!,
             CompanyName = string.IsNullOrWhiteSpace(email.CompanyName) ? email.TaxId! : email.CompanyName,
             Occurrences = [occurrence]
+        };
+        database.Processes.Add(process);
+        database.EmailCardLinks.Add(new EmailCardLink
+        {
+            IncomingEmailId = email.Id,
+            ProcessOccurrenceId = occurrence.Id,
+            OperationDefinitionId = operation.Id
         });
     }
 
@@ -115,7 +122,11 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
     private static EmailEventType? IdentifyEvent(IEnumerable<EmailRule> rules, string subject)
     {
         var normalizedSubject = Normalize(subject);
-        return rules.FirstOrDefault(rule => normalizedSubject.Contains(Normalize(rule.SubjectPattern), StringComparison.Ordinal))?.EventType;
+        return rules
+            .Where(rule => normalizedSubject.Contains(Normalize(rule.SubjectPattern), StringComparison.Ordinal))
+            .OrderByDescending(rule => Normalize(rule.SubjectPattern).Length)
+            .FirstOrDefault()
+            ?.EventType;
     }
 
     private DateTime? CalculateDeadline(OperationDefinition operation, EmailEventType type, DateTime receivedAtUtc)

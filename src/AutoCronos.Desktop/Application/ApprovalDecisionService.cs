@@ -23,16 +23,19 @@ public sealed class ApprovalDecisionService(AutoCronosDbContext database)
         if (email is not null && process is not null)
         {
             var active = process.Occurrences.SingleOrDefault(x => x.Status == OccurrenceStatus.Active);
+            ProcessOccurrence? linkedOccurrence = null;
             if (approval.Type == ApprovalType.DuplicateNotice && active is not null)
             {
                 active.ReceivedAtUtc = email.ReceivedAtUtc;
-                active.History.Add(History("InformativoLiberado", "Novo informativo liberado pelo usuario."));
+                database.HistoryEntries.Add(History(active.Id, "InformativoLiberado", "Novo informativo liberado pelo usuario."));
+                linkedOccurrence = active;
             }
             else if (approval.Type == ApprovalType.ChangeCompetence && active is not null)
             {
                 var previous = active.Competence ?? "nao informada";
                 active.Competence = email.Competence;
-                active.History.Add(History("CompetenciaAlterada", $"Competencia alterada: {previous} para {email.Competence ?? "nao informada"}."));
+                database.HistoryEntries.Add(History(active.Id, "CompetenciaAlterada", $"Competencia alterada: {previous} para {email.Competence ?? "nao informada"}."));
+                linkedOccurrence = active;
             }
             else if (approval.Type == ApprovalType.ReactivateProcess)
             {
@@ -42,20 +45,36 @@ public sealed class ApprovalDecisionService(AutoCronosDbContext database)
                     .Select(column => column.Name)
                     .FirstOrDefault()
                     ?? throw new InvalidOperationException("O quadro nao possui uma coluna inicial.");
-                process.Occurrences.Add(new ProcessOccurrence
+                linkedOccurrence = new ProcessOccurrence
                 {
+                    ProcessId = process.Id,
                     Number = process.Occurrences.Count + 1,
                     CurrentColumn = initialColumn,
                     ReceivedAtUtc = email.ReceivedAtUtc,
-                    Competence = email.Competence,
-                    History = [History("ProcessoReativado", "Nova ocorrencia criada por reativacao aprovada.")]
-                });
+                    Competence = email.Competence
+                };
+                database.Occurrences.Add(linkedOccurrence);
+                database.HistoryEntries.Add(History(linkedOccurrence.Id, "ProcessoReativado", "Nova ocorrencia criada por reativacao aprovada."));
             }
+
+            if (linkedOccurrence is not null)
+                database.EmailCardLinks.Add(new EmailCardLink
+                {
+                    IncomingEmailId = email.Id,
+                    ProcessOccurrenceId = linkedOccurrence.Id,
+                    OperationDefinitionId = process.OperationDefinitionId
+                });
         }
 
         approval.Status = ApprovalStatus.Approved;
         database.SaveChanges();
     }
 
-    private static ProcessHistoryEntry History(string eventType, string description) => new() { CreatedAtUtc = DateTime.UtcNow, EventType = eventType, Description = description };
+    private static ProcessHistoryEntry History(Guid occurrenceId, string eventType, string description) => new()
+    {
+        ProcessOccurrenceId = occurrenceId,
+        CreatedAtUtc = DateTime.UtcNow,
+        EventType = eventType,
+        Description = description
+    };
 }

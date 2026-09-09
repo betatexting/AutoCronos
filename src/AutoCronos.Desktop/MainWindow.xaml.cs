@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AutoCronos.Desktop.Domain;
 using AutoCronos.Desktop.Services;
 
@@ -14,17 +15,31 @@ public partial class MainWindow : Window
     private Point _dragStartPosition;
     private bool _dragInProgress;
     private bool _refreshingBoards;
+    private readonly DispatcherTimer _elapsedTimeTimer;
 
     public MainWindow(LocalDataService data)
     {
         _data = data;
         InitializeComponent();
+        _elapsedTimeTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _elapsedTimeTimer.Tick += (_, _) => UpdateElapsedTimes();
+        _elapsedTimeTimer.Start();
         _data.StateChanged += Data_StateChanged;
-        Closed += (_, _) => _data.StateChanged -= Data_StateChanged;
+        Closed += (_, _) =>
+        {
+            _elapsedTimeTimer.Stop();
+            _data.StateChanged -= Data_StateChanged;
+        };
         RefreshView();
     }
 
     private void Data_StateChanged(object? sender, EventArgs e) => Dispatcher.Invoke(RefreshView);
+
+    private void UpdateElapsedTimes()
+    {
+        foreach (var card in _data.Board.Columns.SelectMany(column => column.Cards))
+            card.UpdateElapsedTime();
+    }
 
     private void RefreshView()
     {
@@ -34,6 +49,7 @@ public partial class MainWindow : Window
         BoardComboBox.ItemsSource = _data.Boards;
         var selectedBoard = _data.Boards.FirstOrDefault(item => item.Id == _data.Board.Id);
         BoardComboBox.SelectedItem = selectedBoard;
+        EditBoardRulesButton.IsEnabled = selectedBoard?.Id is { } selectedBoardId && !_data.IsDevolutionBoard(selectedBoardId);
         DeleteBoardButton.IsEnabled = selectedBoard?.CanDelete == true;
         _refreshingBoards = false;
         _selectedCard = null;
@@ -109,11 +125,30 @@ public partial class MainWindow : Window
         }
     }
 
+    private void EditBoardRules_Click(object sender, RoutedEventArgs e)
+    {
+        if (BoardComboBox.SelectedItem is not BoardOption { Id: { } boardId } || _data.IsDevolutionBoard(boardId))
+            return;
+
+        try
+        {
+            new AutoCronos.Desktop.Windows.BoardCreationWindow(_data, boardId) { Owner = this }.ShowDialog();
+            RefreshView();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Editar regras", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void AddManualCard_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not KanbanColumn column)
             return;
-        new AutoCronos.Desktop.Windows.CardDetailsWindow(_data, _data.Board.Id, column.Name) { Owner = this }.ShowDialog();
+        if (_data.IsDevolutionBoard(_data.Board.Id))
+            new AutoCronos.Desktop.Windows.CardDetailsWindow(_data, _data.Board.Id, column.Name) { Owner = this }.ShowDialog();
+        else
+            new AutoCronos.Desktop.Windows.CustomCardDetailsWindow(_data, _data.Board.Id, initialColumnName: column.Name) { Owner = this }.ShowDialog();
         e.Handled = true;
     }
 
@@ -188,7 +223,10 @@ public partial class MainWindow : Window
 
         try
         {
-            new AutoCronos.Desktop.Windows.CardDetailsWindow(_data, card.OccurrenceId) { Owner = this }.ShowDialog();
+            if (_data.IsDevolutionBoard(_data.Board.Id))
+                new AutoCronos.Desktop.Windows.CardDetailsWindow(_data, card.OccurrenceId) { Owner = this }.ShowDialog();
+            else
+                new AutoCronos.Desktop.Windows.CustomCardDetailsWindow(_data, _data.Board.Id, card.OccurrenceId) { Owner = this }.ShowDialog();
         }
         catch (Exception exception)
         {

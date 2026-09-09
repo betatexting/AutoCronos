@@ -511,12 +511,16 @@ public sealed class GmailEmailIntegrationService
         var document = await ReadJsonAsync(response, cancellationToken);
 
         var subject = GetHeader(document.RootElement, "Subject") ?? "(sem assunto)";
+        var sender = GetHeader(document.RootElement, "From") ?? string.Empty;
+        var isReply = !string.IsNullOrWhiteSpace(GetHeader(document.RootElement, "In-Reply-To")) ||
+                      !string.IsNullOrWhiteSpace(GetHeader(document.RootElement, "References")) ||
+                      Regex.IsMatch(subject, @"^\s*(?:re|res|aw|sv)\s*:", RegexOptions.IgnoreCase);
         var body = ExtractBody(document.RootElement);
         var internalDate = document.RootElement.TryGetProperty("internalDate", out var internalDateElement)
             ? ParseInternalDate(internalDateElement.GetString())
             : DateTime.UtcNow;
 
-        return new GmailMessage(messageId, subject, body, internalDate);
+        return new GmailMessage(messageId, subject, sender, body, internalDate, isReply);
     }
 
     private async Task<string> GetThreadIdAsync(string accessToken, string messageId, CancellationToken cancellationToken)
@@ -559,7 +563,7 @@ public sealed class GmailEmailIntegrationService
         var taxId = ExtractTaxId(message.Subject, message.Body);
         var companyName = EmailCompanyNameExtractor.Extract(message.Subject, message.Body);
         var competence = ExtractCompetence(message.Subject, message.Body);
-        return new EmailInput(message.Id, message.Subject, taxId, companyName, competence, message.ReceivedAtUtc);
+        return new EmailInput(message.Id, message.Subject, taxId, companyName, competence, message.ReceivedAtUtc, message.Sender, message.Body, message.IsReply);
     }
 
     private static string? ExtractTaxId(string subject, string body)
@@ -590,7 +594,10 @@ public sealed class GmailEmailIntegrationService
 
     private static bool ShouldIgnore(EmailProcessingResult result) =>
         result.Message.Contains("sem regra reconhecida", StringComparison.OrdinalIgnoreCase) ||
-        result.Message.Contains("CPF/CNPJ valido", StringComparison.OrdinalIgnoreCase);
+        result.Message.Contains("CPF/CNPJ valido", StringComparison.OrdinalIgnoreCase) ||
+        result.Message.Contains("Resposta de e-mail", StringComparison.OrdinalIgnoreCase) ||
+        result.Message.Contains("mais de um quadro", StringComparison.OrdinalIgnoreCase) ||
+        result.Message.Contains("nao possui coluna inicial", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildSearchQuery(IReadOnlyList<string> subjectPatterns)
     {
@@ -864,5 +871,5 @@ public sealed class GmailEmailIntegrationService
     private sealed record GmailTokenResponse(string AccessToken, string RefreshToken);
     private sealed record GmailAuthorizationResult(string AccessToken, string RefreshToken, string EmailAddress);
     private sealed record GmailLabelSet(string InboxLabelId, string ProcessedLabelId, string PendingLabelId, string IgnoredLabelId);
-    private sealed record GmailMessage(string Id, string Subject, string Body, DateTime ReceivedAtUtc);
+    private sealed record GmailMessage(string Id, string Subject, string Sender, string Body, DateTime ReceivedAtUtc, bool IsReply);
 }

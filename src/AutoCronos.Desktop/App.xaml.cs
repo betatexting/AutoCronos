@@ -21,11 +21,15 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         _data.NotificationRaised += Data_NotificationRaised;
-        _data.Initialize();
+        var startupNotifications = _data.Initialize();
         new AutoCronos.Desktop.Services.StartupService().Enable();
         ConfigureEmailSyncTimer();
         ConfigureDeadlineTimer();
         new AutoCronos.Desktop.Windows.FloatingLauncherWindow(OpenBoard, OpenEmailSettings, OpenWarnings).Show();
+
+        foreach (var notification in startupNotifications)
+            _notificationQueue.Enqueue(notification with { IsPersistent = true });
+        ShowNextNotification();
 
         if (!_data.GetEmailStatus().IsConnected)
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OpenEmailSettings));

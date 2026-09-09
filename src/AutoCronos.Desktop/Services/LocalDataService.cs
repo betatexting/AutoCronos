@@ -36,17 +36,71 @@ public sealed class LocalDataService
     public event EventHandler? StateChanged;
     public event Action<AppNotification>? NotificationRaised;
 
-    public void Initialize()
+    public IReadOnlyList<AppNotification> Initialize()
     {
         using var database = new AutoCronosDbContext(_options);
         database.Database.EnsureCreated();
+        CreateExtensionTables(database);
         SeedDevolutionOperation(database);
+        SeedLegacyCustomBoardFields(database);
         RemoveSampleData(database);
         RepairCompanyNames(database);
         var notifications = AdvanceDueCards(database, out _);
         RefreshViews(database);
         OnStateChanged();
-        RaiseNotifications(notifications);
+        return notifications;
+    }
+
+    private static void CreateExtensionTables(AutoCronosDbContext database)
+    {
+        database.Database.ExecuteSqlRaw(
+            """
+            CREATE TABLE IF NOT EXISTS "CardFieldDefinitions" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_CardFieldDefinitions" PRIMARY KEY,
+                "OperationDefinitionId" TEXT NOT NULL,
+                "Name" TEXT NOT NULL,
+                "FieldType" INTEGER NOT NULL,
+                "IsRequired" INTEGER NOT NULL,
+                "ShowOnCard" INTEGER NOT NULL,
+                "SortOrder" INTEGER NOT NULL,
+                "EmailSource" INTEGER NOT NULL,
+                CONSTRAINT "FK_CardFieldDefinitions_Operations_OperationDefinitionId"
+                    FOREIGN KEY ("OperationDefinitionId") REFERENCES "Operations" ("Id") ON DELETE CASCADE
+            );
+            """);
+        database.Database.ExecuteSqlRaw(
+            """
+            CREATE TABLE IF NOT EXISTS "CardFieldValues" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_CardFieldValues" PRIMARY KEY,
+                "ProcessOccurrenceId" TEXT NOT NULL,
+                "CardFieldDefinitionId" TEXT NOT NULL,
+                "Value" TEXT NOT NULL,
+                CONSTRAINT "FK_CardFieldValues_Occurrences_ProcessOccurrenceId"
+                    FOREIGN KEY ("ProcessOccurrenceId") REFERENCES "Occurrences" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_CardFieldValues_CardFieldDefinitions_CardFieldDefinitionId"
+                    FOREIGN KEY ("CardFieldDefinitionId") REFERENCES "CardFieldDefinitions" ("Id") ON DELETE CASCADE
+            );
+            """);
+        database.Database.ExecuteSqlRaw(
+            """
+            CREATE TABLE IF NOT EXISTS "EmailCardLinks" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_EmailCardLinks" PRIMARY KEY,
+                "IncomingEmailId" TEXT NOT NULL,
+                "ProcessOccurrenceId" TEXT NOT NULL,
+                "OperationDefinitionId" TEXT NOT NULL,
+                CONSTRAINT "FK_EmailCardLinks_IncomingEmails_IncomingEmailId"
+                    FOREIGN KEY ("IncomingEmailId") REFERENCES "IncomingEmails" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_EmailCardLinks_Occurrences_ProcessOccurrenceId"
+                    FOREIGN KEY ("ProcessOccurrenceId") REFERENCES "Occurrences" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_EmailCardLinks_Operations_OperationDefinitionId"
+                    FOREIGN KEY ("OperationDefinitionId") REFERENCES "Operations" ("Id") ON DELETE CASCADE
+            );
+            """);
+        database.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CardFieldDefinitions_OperationDefinitionId_SortOrder\" ON \"CardFieldDefinitions\" (\"OperationDefinitionId\", \"SortOrder\");");
+        database.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CardFieldValues_ProcessOccurrenceId_CardFieldDefinitionId\" ON \"CardFieldValues\" (\"ProcessOccurrenceId\", \"CardFieldDefinitionId\");");
+        database.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_EmailCardLinks_IncomingEmailId\" ON \"EmailCardLinks\" (\"IncomingEmailId\");");
+        database.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_EmailCardLinks_ProcessOccurrenceId\" ON \"EmailCardLinks\" (\"ProcessOccurrenceId\");");
+        database.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_EmailCardLinks_OperationDefinitionId\" ON \"EmailCardLinks\" (\"OperationDefinitionId\");");
     }
 
     public async Task ResolveApprovalAsync(Guid approvalId, bool approve, CancellationToken cancellationToken = default)
@@ -123,7 +177,8 @@ public sealed class LocalDataService
     {
         var operations = database.Operations
             .Include(x => x.Columns)
-            .Include(x => x.Processes).ThenInclude(x => x.Occurrences)
+            .Include(x => x.CardFields)
+            .Include(x => x.Processes).ThenInclude(x => x.Occurrences).ThenInclude(x => x.FieldValues)
             .OrderBy(x => x.Name)
             .ToList();
 
@@ -148,12 +203,27 @@ public sealed class LocalDataService
             .ToList();
 
         var orderedColumns = operation.Columns.OrderBy(x => x.SortOrder).ToList();
+        var cardFields = operation.CardFields.OrderBy(field => field.SortOrder).ToList();
+        var isDevolutionBoard = operation.Name == DevolutionOperationName;
         Board = new BoardModel(operation.Id, operation.Name, orderedColumns.Select((column, index) =>
         {
             var cards = operation.Processes
                 .SelectMany(process => process.Occurrences.Where(occurrence => occurrence.CurrentColumn == column.Name), (process, occurrence) => new { process, occurrence })
                 .OrderBy(x => x.occurrence.DeadlineAtUtc)
-                .Select(x => new TaskCard(x.process.Id, x.occurrence.Id, x.process.CompanyName, FormatTaxId(x.process.TaxId), DeadlineLabel(x.occurrence)))
+                .Select(x =>
+                {
+                    var displayValues = cardFields
+                        .Where(field => field.ShowOnCard)
+                        .Select(field => x.occurrence.FieldValues.FirstOrDefault(value => value.CardFieldDefinitionId == field.Id)?.Value)
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Cast<string>()
+                        .ToList();
+                    var title = isDevolutionBoard ? x.process.CompanyName : displayValues.FirstOrDefault() ?? x.process.CompanyName;
+                    var subtitle = isDevolutionBoard ? FormatTaxId(x.process.TaxId) : displayValues.Skip(1).FirstOrDefault() ?? string.Empty;
+                    var card = new TaskCard(x.process.Id, x.occurrence.Id, title, subtitle, DeadlineLabel(x.occurrence), x.occurrence.ReceivedAtUtc, x.occurrence.CompletedAtUtc);
+                    card.UpdateElapsedTime();
+                    return card;
+                })
                 .ToList();
             return new KanbanColumn(column.Id, column.Name, index == 0 || SameColumn(column.Name, InitialColumnName), cards);
         }).ToList());
@@ -192,6 +262,28 @@ public sealed class LocalDataService
             DeadlineRules = [new() { EventType = EmailEventType.InitialNotice, Unit = DeadlineUnit.CalendarDays, Amount = 30, TargetColumnName = "Iniciar Inativacao" }]
         };
         database.Operations.Add(operation);
+        database.SaveChanges();
+    }
+
+    private static void SeedLegacyCustomBoardFields(AutoCronosDbContext database)
+    {
+        var legacyBoardIds = database.Operations
+            .Where(operation => operation.Name != DevolutionOperationName && !operation.CardFields.Any())
+            .Select(operation => operation.Id)
+            .ToList();
+        if (legacyBoardIds.Count == 0)
+            return;
+
+        database.CardFieldDefinitions.AddRange(legacyBoardIds.Select(operationId => new CardFieldDefinition
+            {
+                OperationDefinitionId = operationId,
+                Name = "Titulo",
+                FieldType = CardFieldType.Text,
+                IsRequired = true,
+                ShowOnCard = true,
+                SortOrder = 1,
+                EmailSource = EmailFieldSource.Subject
+            }));
         database.SaveChanges();
     }
 
@@ -250,6 +342,38 @@ public sealed class LocalDataService
             .ToList();
     }
 
+    public BoardRulesEditor GetBoardRulesEditor(Guid boardId)
+    {
+        using var database = new AutoCronosDbContext(_options);
+        var operation = database.Operations
+            .Include(item => item.Columns)
+            .Include(item => item.CardFields)
+            .Include(item => item.EmailRules)
+            .Include(item => item.DeadlineRules)
+            .SingleOrDefault(item => item.Id == boardId)
+            ?? throw new InvalidOperationException("O quadro selecionado nao existe.");
+        if (operation.Name == DevolutionOperationName)
+            throw new InvalidOperationException("As regras do quadro Devolucoes sao protegidas pelo fluxo contabil padrao.");
+
+        var deadlineRule = operation.DeadlineRules
+            .FirstOrDefault(rule => rule.EventType == EmailEventType.InitialNotice);
+        return new BoardRulesEditor(
+            operation.Id,
+            operation.Name,
+            operation.Columns.OrderBy(column => column.SortOrder).Select(column => column.Name).ToList(),
+            operation.CardFields.OrderBy(field => field.SortOrder).Select(field => new CardFieldDefinitionInput(
+                field.Name,
+                field.FieldType,
+                field.IsRequired,
+                field.ShowOnCard,
+                field.EmailSource,
+                field.Id)).ToList(),
+            operation.EmailRules.OrderBy(rule => rule.SubjectPattern).Select(rule => rule.SubjectPattern).ToList(),
+            deadlineRule?.Amount,
+            deadlineRule?.Unit,
+            deadlineRule?.TargetColumnName);
+    }
+
     public async Task<Guid> CreateBoardAsync(BoardCreationRequest request, CancellationToken cancellationToken = default)
     {
         var name = request.Name.Trim();
@@ -258,14 +382,32 @@ public sealed class LocalDataService
             .Where(column => !string.IsNullOrWhiteSpace(column))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var cardFields = request.CardFields
+            .Select(field => field with { Name = field.Name.Trim() })
+            .ToList();
+        var subjectPatterns = request.EmailSubjectPatterns
+            .Select(pattern => pattern.Trim())
+            .Where(pattern => !string.IsNullOrWhiteSpace(pattern))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (string.IsNullOrWhiteSpace(name))
             throw new InvalidOperationException("Informe o nome do quadro.");
         if (columnNames.Count == 0)
             throw new InvalidOperationException("Informe pelo menos uma coluna.");
-        if (request.AutomaticMoveAfterDays is <= 0)
+        if (cardFields.Count == 0)
+            throw new InvalidOperationException("Configure pelo menos um campo para os cards.");
+        if (cardFields.Select(field => NormalizeName(field.Name)).Distinct().Count() != cardFields.Count)
+            throw new InvalidOperationException("Os campos do card precisam ter nomes diferentes.");
+        if (!cardFields.Any(field => field.ShowOnCard))
+            throw new InvalidOperationException("Marque pelo menos um campo para ser exibido no card.");
+        if (subjectPatterns.Count == 0)
+            throw new InvalidOperationException("Configure pelo menos um padrao de assunto para captura de e-mail.");
+        if (request.AutomaticMoveAmount is <= 0)
             throw new InvalidOperationException("O prazo automatico deve ser maior que zero.");
-        if (request.AutomaticMoveAfterDays is not null &&
-            !columnNames.Contains(request.AutomaticMoveTargetColumn?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+        if (request.AutomaticMoveAmount is not null && request.AutomaticMoveUnit is null)
+            throw new InvalidOperationException("Selecione a unidade do prazo automatico.");
+        if (request.AutomaticMoveAmount is not null &&
+            !columnNames.Any(column => SameColumn(column, request.AutomaticMoveTargetColumn?.Trim() ?? string.Empty)))
             throw new InvalidOperationException("A coluna de destino automatico deve fazer parte do novo quadro.");
 
         await _databaseLock.WaitAsync(cancellationToken);
@@ -274,11 +416,12 @@ public sealed class LocalDataService
             using var database = new AutoCronosDbContext(_options);
             if (database.Operations.Any(item => item.Name.ToUpper() == name.ToUpper()))
                 throw new InvalidOperationException("Ja existe um quadro com esse nome.");
+            var configuredPatterns = database.EmailRules.Select(rule => rule.SubjectPattern).ToList();
+            var duplicatedPattern = subjectPatterns.FirstOrDefault(pattern =>
+                configuredPatterns.Any(existing => NormalizeName(existing) == NormalizeName(pattern)));
+            if (duplicatedPattern is not null)
+                throw new InvalidOperationException($"O padrao de assunto '{duplicatedPattern}' ja pertence a outro quadro.");
 
-            var templateRules = database.Operations
-                .Include(item => item.EmailRules)
-                .SingleOrDefault(item => item.Name == DevolutionOperationName)
-                ?.EmailRules;
             var operation = new OperationDefinition
             {
                 Name = name,
@@ -288,19 +431,28 @@ public sealed class LocalDataService
                     SortOrder = index + 1,
                     IsTerminal = index == columnNames.Count - 1
                 }).ToList(),
-                EmailRules = templateRules?.Select(rule => new EmailRule
+                EmailRules = subjectPatterns.Select(pattern => new EmailRule
                 {
-                    EventType = rule.EventType,
-                    SubjectPattern = rule.SubjectPattern
-                }).ToList() ?? []
+                    EventType = EmailEventType.InitialNotice,
+                    SubjectPattern = pattern
+                }).ToList(),
+                CardFields = cardFields.Select((field, index) => new CardFieldDefinition
+                {
+                    Name = field.Name,
+                    FieldType = field.FieldType,
+                    IsRequired = field.IsRequired,
+                    ShowOnCard = field.ShowOnCard,
+                    EmailSource = field.EmailSource,
+                    SortOrder = index + 1
+                }).ToList()
             };
-            if (request.AutomaticMoveAfterDays is { } days)
+            if (request.AutomaticMoveAmount is { } amount)
             {
                 operation.DeadlineRules.Add(new DeadlineRule
                 {
                     EventType = EmailEventType.InitialNotice,
-                    Unit = DeadlineUnit.CalendarDays,
-                    Amount = days,
+                    Unit = request.AutomaticMoveUnit!.Value,
+                    Amount = amount,
                     TargetColumnName = request.AutomaticMoveTargetColumn!.Trim()
                 });
             }
@@ -311,6 +463,139 @@ public sealed class LocalDataService
             RefreshViews(database);
             OnStateChanged();
             return operation.Id;
+        }
+        finally
+        {
+            _databaseLock.Release();
+        }
+    }
+
+    public async Task UpdateBoardRulesAsync(BoardRulesUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        var name = request.Name.Trim();
+        var cardFields = request.CardFields
+            .Select(field => field with { Name = field.Name.Trim() })
+            .Where(field => !string.IsNullOrWhiteSpace(field.Name))
+            .ToList();
+        var subjectPatterns = request.EmailSubjectPatterns
+            .Select(pattern => pattern.Trim())
+            .Where(pattern => !string.IsNullOrWhiteSpace(pattern))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Informe o nome do quadro.");
+        if (cardFields.Count == 0)
+            throw new InvalidOperationException("Configure pelo menos um campo para os cards.");
+        if (cardFields.Any(field => string.IsNullOrWhiteSpace(field.Name)))
+            throw new InvalidOperationException("Informe o nome de todos os campos ou remova os campos vazios.");
+        if (cardFields.Select(field => NormalizeName(field.Name)).Distinct().Count() != cardFields.Count)
+            throw new InvalidOperationException("Os campos do card precisam ter nomes diferentes.");
+        if (!cardFields.Any(field => field.ShowOnCard))
+            throw new InvalidOperationException("Marque pelo menos um campo para ser exibido no card.");
+        if (subjectPatterns.Count == 0)
+            throw new InvalidOperationException("Configure pelo menos um padrao de assunto para captura de e-mail.");
+        if (request.AutomaticMoveAmount is <= 0)
+            throw new InvalidOperationException("O prazo automatico deve ser maior que zero.");
+        if (request.AutomaticMoveAmount is not null && request.AutomaticMoveUnit is null)
+            throw new InvalidOperationException("Selecione a unidade do prazo automatico.");
+        if (cardFields.Where(field => field.Id.HasValue).Select(field => field.Id).Distinct().Count() != cardFields.Count(field => field.Id.HasValue))
+            throw new InvalidOperationException("A lista de campos contem identificadores repetidos.");
+
+        await _databaseLock.WaitAsync(cancellationToken);
+        try
+        {
+            using var database = new AutoCronosDbContext(_options);
+            var operation = database.Operations
+                .Include(item => item.Columns)
+                .Include(item => item.CardFields)
+                .Include(item => item.EmailRules)
+                .Include(item => item.DeadlineRules)
+                .SingleOrDefault(item => item.Id == request.BoardId)
+                ?? throw new InvalidOperationException("O quadro selecionado nao existe.");
+            if (operation.Name == DevolutionOperationName)
+                throw new InvalidOperationException("As regras do quadro Devolucoes sao protegidas pelo fluxo contabil padrao.");
+            if (database.Operations.Any(item => item.Id != operation.Id && item.Name.ToUpper() == name.ToUpper()))
+                throw new InvalidOperationException("Ja existe um quadro com esse nome.");
+
+            var existingFieldsById = operation.CardFields.ToDictionary(field => field.Id);
+            var unknownField = cardFields.FirstOrDefault(field => field.Id is { } id && !existingFieldsById.ContainsKey(id));
+            if (unknownField is not null)
+                throw new InvalidOperationException($"O campo '{unknownField.Name}' nao pertence mais a este quadro. Reabra a tela de regras.");
+
+            var configuredPatterns = database.EmailRules
+                .Where(rule => rule.OperationDefinitionId != operation.Id)
+                .Select(rule => rule.SubjectPattern)
+                .ToList();
+            var duplicatedPattern = subjectPatterns.FirstOrDefault(pattern =>
+                configuredPatterns.Any(existing => NormalizeName(existing) == NormalizeName(pattern)));
+            if (duplicatedPattern is not null)
+                throw new InvalidOperationException($"O padrao de assunto '{duplicatedPattern}' ja pertence a outro quadro.");
+
+            var targetColumnName = request.AutomaticMoveTargetColumn?.Trim();
+            if (request.AutomaticMoveAmount is not null &&
+                !operation.Columns.Any(column => SameColumn(column.Name, targetColumnName ?? string.Empty)))
+                throw new InvalidOperationException("A coluna de destino automatico deve fazer parte do quadro.");
+
+            using var transaction = database.Database.BeginTransaction();
+            operation.Name = name;
+            var retainedIds = cardFields.Where(field => field.Id.HasValue).Select(field => field.Id!.Value).ToHashSet();
+            database.CardFieldDefinitions.RemoveRange(operation.CardFields.Where(field => !retainedIds.Contains(field.Id)));
+            database.EmailRules.RemoveRange(operation.EmailRules);
+            database.DeadlineRules.RemoveRange(operation.DeadlineRules.Where(rule => rule.EventType == EmailEventType.InitialNotice));
+
+            foreach (var (field, index) in cardFields.Where(field => field.Id.HasValue).Select((field, index) => (field, index)))
+            {
+                var definition = existingFieldsById[field.Id!.Value];
+                definition.Name = field.Name;
+                definition.FieldType = field.FieldType;
+                definition.IsRequired = field.IsRequired;
+                definition.ShowOnCard = field.ShowOnCard;
+                definition.EmailSource = field.EmailSource;
+                definition.SortOrder = int.MinValue + index;
+            }
+            database.SaveChanges();
+
+            foreach (var (field, index) in cardFields.Select((field, index) => (field, index)))
+            {
+                if (field.Id is { } fieldId)
+                {
+                    existingFieldsById[fieldId].SortOrder = index + 1;
+                    continue;
+                }
+
+                database.CardFieldDefinitions.Add(new CardFieldDefinition
+                {
+                    OperationDefinitionId = operation.Id,
+                    Name = field.Name,
+                    FieldType = field.FieldType,
+                    IsRequired = field.IsRequired,
+                    ShowOnCard = field.ShowOnCard,
+                    EmailSource = field.EmailSource,
+                    SortOrder = index + 1
+                });
+            }
+            database.EmailRules.AddRange(subjectPatterns.Select(pattern => new EmailRule
+            {
+                OperationDefinitionId = operation.Id,
+                EventType = EmailEventType.InitialNotice,
+                SubjectPattern = pattern
+            }));
+            if (request.AutomaticMoveAmount is { } amount)
+            {
+                database.DeadlineRules.Add(new DeadlineRule
+                {
+                    OperationDefinitionId = operation.Id,
+                    EventType = EmailEventType.InitialNotice,
+                    Unit = request.AutomaticMoveUnit!.Value,
+                    Amount = amount,
+                    TargetColumnName = targetColumnName!
+                });
+            }
+
+            database.SaveChanges();
+            transaction.Commit();
+            RefreshViews(database);
+            OnStateChanged();
         }
         finally
         {
@@ -369,8 +654,9 @@ public sealed class LocalDataService
 
             foreach (var terminal in operation.Columns.Where(column => column.IsTerminal))
                 terminal.IsTerminal = false;
-            operation.Columns.Add(new KanbanColumnDefinition
+            database.KanbanColumns.Add(new KanbanColumnDefinition
             {
+                OperationDefinitionId = operation.Id,
                 Name = name,
                 SortOrder = operation.Columns.Count == 0 ? 1 : operation.Columns.Max(column => column.SortOrder) + 1,
                 IsTerminal = true
@@ -556,7 +842,13 @@ public sealed class LocalDataService
                     ?? throw new InvalidOperationException("O card selecionado nao foi encontrado.");
                 var sourceProcess = sourceOccurrence.Process ?? throw new InvalidOperationException("O processo do card nao foi encontrado.");
                 isManualCard = sourceOccurrence.History.Any(item => item.EventType == "CardCriadoManualmente");
-                providerMessageId = lookupDatabase.IncomingEmails
+                providerMessageId = (from link in lookupDatabase.EmailCardLinks
+                                     join email in lookupDatabase.IncomingEmails on link.IncomingEmailId equals email.Id
+                                     where link.ProcessOccurrenceId == sourceOccurrence.Id
+                                     orderby email.ReceivedAtUtc descending
+                                     select email.ProviderMessageId)
+                    .FirstOrDefault();
+                providerMessageId ??= lookupDatabase.IncomingEmails
                     .Where(email => email.TaxId == sourceProcess.TaxId && email.ReceivedAtUtc == sourceOccurrence.ReceivedAtUtc)
                     .Select(email => email.ProviderMessageId)
                     .FirstOrDefault();
@@ -611,7 +903,13 @@ public sealed class LocalDataService
             .OrderBy(column => column.SortOrder)
             .Select(column => column.Name)
             .ToList();
-        var subject = database.IncomingEmails
+        var subject = (from link in database.EmailCardLinks
+                       join email in database.IncomingEmails on link.IncomingEmailId equals email.Id
+                       where link.ProcessOccurrenceId == occurrence.Id
+                       orderby email.ReceivedAtUtc descending
+                       select email.Subject)
+            .FirstOrDefault();
+        subject ??= database.IncomingEmails
             .Where(email => email.TaxId == process.TaxId && email.ReceivedAtUtc == occurrence.ReceivedAtUtc)
             .Select(email => email.Subject)
             .FirstOrDefault() ?? (occurrence.History.Any(item => item.EventType == "CardCriadoManualmente")
@@ -619,6 +917,208 @@ public sealed class LocalDataService
                 : "E-mail de origem nao localizado.");
 
         return new TaskCardDetails(occurrence.Id, process.CompanyName, process.TaxId, occurrence.Competence, occurrence.ReceivedAtUtc, occurrence.DeadlineAtUtc, occurrence.CurrentColumn, subject, columns);
+    }
+
+    public bool IsDevolutionBoard(Guid boardId)
+    {
+        using var database = new AutoCronosDbContext(_options);
+        return database.Operations.Any(operation => operation.Id == boardId && operation.Name == DevolutionOperationName);
+    }
+
+    public CustomCardEditor GetCustomCardEditor(Guid boardId, Guid? occurrenceId = null, string? initialColumnName = null)
+    {
+        using var database = new AutoCronosDbContext(_options);
+        var operation = database.Operations
+            .Include(item => item.Columns)
+            .Include(item => item.CardFields)
+            .SingleOrDefault(item => item.Id == boardId)
+            ?? throw new InvalidOperationException("O quadro selecionado nao existe.");
+        if (operation.Name == DevolutionOperationName)
+            throw new InvalidOperationException("O quadro Devolucoes utiliza o formulario contabil padrao.");
+
+        var columns = operation.Columns.OrderBy(column => column.SortOrder).Select(column => column.Name).ToList();
+        if (columns.Count == 0)
+            throw new InvalidOperationException("O quadro nao possui colunas.");
+        if (occurrenceId is null)
+        {
+            var initialColumn = columns.FirstOrDefault(column => SameColumn(column, initialColumnName ?? string.Empty)) ?? columns[0];
+            return new CustomCardEditor(
+                operation.Id,
+                null,
+                operation.Name,
+                initialColumn,
+                DateTime.UtcNow,
+                null,
+                null,
+                columns,
+                operation.CardFields.OrderBy(field => field.SortOrder)
+                    .Select(field => new CustomCardFieldEditor(field.Id, field.Name, field.FieldType, field.IsRequired, string.Empty))
+                    .ToList(),
+                "Card criado manualmente.");
+        }
+
+        var occurrence = database.Occurrences
+            .Include(item => item.Process)
+            .Include(item => item.FieldValues)
+            .SingleOrDefault(item => item.Id == occurrenceId && item.Process!.OperationDefinitionId == operation.Id)
+            ?? throw new InvalidOperationException("O card selecionado nao foi encontrado neste quadro.");
+        var subject = (from link in database.EmailCardLinks
+                       join email in database.IncomingEmails on link.IncomingEmailId equals email.Id
+                       where link.ProcessOccurrenceId == occurrence.Id
+                       orderby email.ReceivedAtUtc descending
+                       select email.Subject).FirstOrDefault() ?? "Card criado manualmente.";
+        return new CustomCardEditor(
+            operation.Id,
+            occurrence.Id,
+            operation.Name,
+            occurrence.CurrentColumn,
+            occurrence.ReceivedAtUtc,
+            occurrence.CompletedAtUtc,
+            occurrence.DeadlineAtUtc,
+            columns,
+            operation.CardFields.OrderBy(field => field.SortOrder)
+                .Select(field => new CustomCardFieldEditor(
+                    field.Id,
+                    field.Name,
+                    field.FieldType,
+                    field.IsRequired,
+                    occurrence.FieldValues.FirstOrDefault(value => value.CardFieldDefinitionId == field.Id)?.Value ?? string.Empty))
+                .ToList(),
+            subject);
+    }
+
+    public async Task<Guid> SaveCustomCardAsync(CustomCardEditor editor, CancellationToken cancellationToken = default)
+    {
+        ValidateCustomFields(editor.Fields);
+        await _databaseLock.WaitAsync(cancellationToken);
+        try
+        {
+            using var database = new AutoCronosDbContext(_options);
+            var operation = database.Operations
+                .Include(item => item.Columns)
+                .Include(item => item.CardFields)
+                .Include(item => item.DeadlineRules)
+                .SingleOrDefault(item => item.Id == editor.BoardId)
+                ?? throw new InvalidOperationException("O quadro selecionado nao existe.");
+            if (operation.Name == DevolutionOperationName)
+                throw new InvalidOperationException("Use o formulario contabil para cards de Devolucoes.");
+            var targetColumn = operation.Columns.SingleOrDefault(column => SameColumn(column.Name, editor.CurrentColumn))
+                ?? throw new InvalidOperationException("A coluna selecionada nao existe.");
+            var definitions = operation.CardFields.OrderBy(field => field.SortOrder).ToList();
+            if (editor.Fields.Any(field => definitions.All(definition => definition.Id != field.DefinitionId)))
+                throw new InvalidOperationException("A configuracao dos campos deste quadro foi alterada. Reabra o card.");
+
+            ProcessOccurrence occurrence;
+            Process process;
+            string? previousColumn = null;
+            if (editor.OccurrenceId is { } occurrenceId)
+            {
+                occurrence = database.Occurrences
+                    .Include(item => item.Process)
+                    .Include(item => item.History)
+                    .Include(item => item.FieldValues)
+                    .SingleOrDefault(item => item.Id == occurrenceId)
+                    ?? throw new InvalidOperationException("O card selecionado nao foi encontrado.");
+                process = occurrence.Process ?? throw new InvalidOperationException("O processo do card nao foi encontrado.");
+                if (process.OperationDefinitionId != operation.Id)
+                    throw new InvalidOperationException("O card nao pertence ao quadro selecionado.");
+                previousColumn = occurrence.CurrentColumn;
+            }
+            else
+            {
+                var now = DateTime.UtcNow;
+                occurrence = new ProcessOccurrence
+                {
+                    Number = 1,
+                    CurrentColumn = targetColumn.Name,
+                    ReceivedAtUtc = now,
+                    DeadlineAtUtc = editor.DeadlineAtUtc ?? CalculateConfiguredDeadline(operation, now),
+                    History = [new ProcessHistoryEntry
+                    {
+                        CreatedAtUtc = now,
+                        EventType = "CardCriadoManualmente",
+                        Description = "Card criado manualmente pelo usuario."
+                    }]
+                };
+                process = new Process
+                {
+                    OperationDefinitionId = operation.Id,
+                    TaxId = $"MANUAL-{Guid.NewGuid():N}",
+                    Occurrences = [occurrence]
+                };
+                database.Processes.Add(process);
+            }
+
+            foreach (var field in editor.Fields)
+            {
+                var value = occurrence.FieldValues.FirstOrDefault(item => item.CardFieldDefinitionId == field.DefinitionId);
+                if (value is null)
+                {
+                    database.CardFieldValues.Add(new CardFieldValue
+                    {
+                        ProcessOccurrenceId = occurrence.Id,
+                        CardFieldDefinitionId = field.DefinitionId,
+                        Value = field.Value.Trim()
+                    });
+                }
+                else
+                {
+                    value.Value = field.Value.Trim();
+                }
+            }
+
+            process.CompanyName = definitions
+                .Where(definition => definition.ShowOnCard)
+                .OrderBy(definition => definition.SortOrder)
+                .Select(definition => editor.Fields.FirstOrDefault(field => field.DefinitionId == definition.Id)?.Value)
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim()
+                ?? $"Card {occurrence.Id.ToString()[..8]}";
+            if (editor.OccurrenceId is not null)
+                occurrence.DeadlineAtUtc = editor.DeadlineAtUtc;
+            occurrence.CurrentColumn = targetColumn.Name;
+            occurrence.Status = targetColumn.IsTerminal ? OccurrenceStatus.Completed : OccurrenceStatus.Active;
+            occurrence.CompletedAtUtc = targetColumn.IsTerminal ? occurrence.CompletedAtUtc ?? DateTime.UtcNow : null;
+            if (previousColumn is not null && !SameColumn(previousColumn, targetColumn.Name))
+            {
+                database.HistoryEntries.Add(new ProcessHistoryEntry
+                {
+                    ProcessOccurrenceId = occurrence.Id,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    EventType = "CardEditado",
+                    Description = $"Coluna alterada de {previousColumn} para {targetColumn.Name} pela edicao do card."
+                });
+            }
+
+            database.SaveChanges();
+            RefreshViews(database);
+            OnStateChanged();
+            if (previousColumn is not null && !SameColumn(previousColumn, targetColumn.Name))
+                RaiseColumnNotification(targetColumn.Name, process.CompanyName, automatic: false);
+            return occurrence.Id;
+        }
+        finally
+        {
+            _databaseLock.Release();
+        }
+    }
+
+    private static void ValidateCustomFields(IEnumerable<CustomCardFieldEditor> fields)
+    {
+        var culture = CultureInfo.GetCultureInfo("pt-BR");
+        foreach (var field in fields)
+        {
+            var value = field.Value.Trim();
+            if (field.IsRequired && string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException($"Preencha o campo obrigatorio '{field.Name}'.");
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+            if (field.FieldType == CardFieldType.Number &&
+                !decimal.TryParse(value, NumberStyles.Number, culture, out _) &&
+                !decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
+                throw new InvalidOperationException($"O campo '{field.Name}' deve conter um numero valido.");
+            if (field.FieldType == CardFieldType.Date && !DateTime.TryParse(value, culture, DateTimeStyles.None, out _))
+                throw new InvalidOperationException($"O campo '{field.Name}' deve conter uma data valida.");
+        }
     }
 
     public async Task SaveTaskCardDetailsAsync(TaskCardDetails details, CancellationToken cancellationToken = default)
@@ -646,9 +1146,15 @@ public sealed class LocalDataService
             var duplicateExists = database.Processes.Any(item => item.Id != process.Id && item.OperationDefinitionId == process.OperationDefinitionId && item.TaxId == taxId);
             if (duplicateExists)
                 throw new InvalidOperationException("Ja existe um processo para este CPF/CNPJ.");
-            var sourceEmails = database.IncomingEmails
-                .Where(email => email.TaxId == process.TaxId && email.ReceivedAtUtc == occurrence.ReceivedAtUtc)
+            var linkedEmailIds = database.EmailCardLinks
+                .Where(link => link.ProcessOccurrenceId == occurrence.Id)
+                .Select(link => link.IncomingEmailId)
                 .ToList();
+            var sourceEmails = linkedEmailIds.Count > 0
+                ? database.IncomingEmails.Where(email => linkedEmailIds.Contains(email.Id)).ToList()
+                : database.IncomingEmails
+                    .Where(email => email.TaxId == process.TaxId && email.ReceivedAtUtc == occurrence.ReceivedAtUtc)
+                    .ToList();
 
             var previousColumn = occurrence.CurrentColumn;
             process.CompanyName = companyName;
@@ -662,11 +1168,12 @@ public sealed class LocalDataService
             occurrence.DeadlineAtUtc = details.DeadlineAtUtc;
             occurrence.CurrentColumn = targetColumn.Name;
             occurrence.Status = targetColumn.IsTerminal ? OccurrenceStatus.Completed : OccurrenceStatus.Active;
-            occurrence.CompletedAtUtc = targetColumn.IsTerminal ? DateTime.UtcNow : null;
+            occurrence.CompletedAtUtc = targetColumn.IsTerminal ? occurrence.CompletedAtUtc ?? DateTime.UtcNow : null;
             if (previousColumn != targetColumn.Name)
             {
-                occurrence.History.Add(new ProcessHistoryEntry
+                database.HistoryEntries.Add(new ProcessHistoryEntry
                 {
+                    ProcessOccurrenceId = occurrence.Id,
                     CreatedAtUtc = DateTime.UtcNow,
                     EventType = "CardEditado",
                     Description = $"Coluna alterada de {previousColumn} para {targetColumn.Name} pela edicao do card."
@@ -713,6 +1220,7 @@ public sealed class LocalDataService
     {
         var notifications = new List<AppNotification>();
         movedCount = 0;
+        var nowUtc = DateTime.UtcNow;
         var today = DateTime.Today;
         var operations = database.Operations
             .Include(operation => operation.Columns)
@@ -738,7 +1246,9 @@ public sealed class LocalDataService
                 foreach (var occurrence in process.Occurrences.Where(item =>
                              item.Status == OccurrenceStatus.Active &&
                              item.DeadlineAtUtc.HasValue &&
-                             item.DeadlineAtUtc.Value.ToLocalTime().Date <= today))
+                             (rule.Unit == DeadlineUnit.Hours
+                                 ? item.DeadlineAtUtc.Value <= nowUtc
+                                 : item.DeadlineAtUtc.Value.ToLocalTime().Date <= today)))
                 {
                     var currentColumn = operation.Columns.FirstOrDefault(column => SameColumn(column.Name, occurrence.CurrentColumn));
                     if (currentColumn is not null && currentColumn.SortOrder >= targetColumn.SortOrder)
@@ -748,8 +1258,9 @@ public sealed class LocalDataService
                     occurrence.CurrentColumn = targetColumn.Name;
                     occurrence.Status = targetColumn.IsTerminal ? OccurrenceStatus.Completed : OccurrenceStatus.Active;
                     occurrence.CompletedAtUtc = targetColumn.IsTerminal ? DateTime.UtcNow : null;
-                    occurrence.History.Add(new ProcessHistoryEntry
+                    database.HistoryEntries.Add(new ProcessHistoryEntry
                     {
+                        ProcessOccurrenceId = occurrence.Id,
                         CreatedAtUtc = DateTime.UtcNow,
                         EventType = "PrazoAtingido",
                         Description = $"Card movido automaticamente de {previousColumn} para {targetColumn.Name} ao atingir o prazo."
@@ -824,9 +1335,15 @@ public sealed class LocalDataService
             database.SaveChanges();
     }
 
-    private static string DeadlineLabel(ProcessOccurrence occurrence) => occurrence.DeadlineAtUtc is null
-        ? "Sem prazo configurado"
-        : $"Prazo: {occurrence.DeadlineAtUtc.Value.ToLocalTime():dd/MM/yyyy}";
+    private static string DeadlineLabel(ProcessOccurrence occurrence)
+    {
+        if (occurrence.DeadlineAtUtc is null)
+            return "Sem prazo configurado";
+        var localDeadline = occurrence.DeadlineAtUtc.Value.ToLocalTime();
+        return localDeadline.TimeOfDay == TimeSpan.Zero
+            ? $"Prazo: {localDeadline:dd/MM/yyyy}"
+            : $"Prazo: {localDeadline:dd/MM/yyyy HH:mm}";
+    }
 
     private static string FormatTaxId(string taxId) => taxId.Length switch
     {
@@ -872,11 +1389,11 @@ public sealed class LocalDataService
     private static AppNotification? BuildColumnNotification(string columnName, string companyName, bool automatic)
     {
         if (SameColumn(columnName, ReviewColumnName))
-            return new AppNotification("Card em Conferencia", $"{companyName} foi adicionado a Conferencia.");
+            return new AppNotification("Card em Conferencia", $"{companyName} foi adicionado a Conferencia.", automatic);
         if (SameColumn(columnName, StartDeactivationColumnName))
         {
             var action = automatic ? "foi movido automaticamente" : "foi movido";
-            return new AppNotification("Iniciar inativacao", $"{companyName} {action} para Iniciar Inativacao.");
+            return new AppNotification("Iniciar inativacao", $"{companyName} {action} para Iniciar Inativacao.", automatic);
         }
         return null;
     }
@@ -886,7 +1403,7 @@ public sealed class LocalDataService
         using var database = new AutoCronosDbContext(_options);
         return database.Operations
             .Include(x => x.EmailRules)
-            .Where(x => x.Name == DevolutionOperationName && x.IsActive)
+            .Where(x => x.IsActive)
             .SelectMany(x => x.EmailRules)
             .Select(x => x.SubjectPattern)
             .Distinct()
@@ -896,7 +1413,7 @@ public sealed class LocalDataService
     private EmailProcessingResult ProcessEmail(EmailInput input)
     {
         using var database = new AutoCronosDbContext(_options);
-        return new DevolutionEmailProcessor(database).Process(input);
+        return new BoardEmailProcessor(database).Process(input);
     }
 
     private void OnStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);

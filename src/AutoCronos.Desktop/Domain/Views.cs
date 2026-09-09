@@ -3,9 +3,10 @@ using System.Text.RegularExpressions;
 
 namespace AutoCronos.Desktop.Domain;
 
-public sealed class TaskCard(Guid processId, Guid occurrenceId, string companyName, string taxId, string deadlineLabel) : INotifyPropertyChanged
+public sealed class TaskCard(Guid processId, Guid occurrenceId, string companyName, string taxId, string deadlineLabel, DateTime receivedAtUtc, DateTime? completedAtUtc) : INotifyPropertyChanged
 {
     private bool _isSelected;
+    private string _elapsedLabel = string.Empty;
 
     public Guid ProcessId { get; } = processId;
     public Guid OccurrenceId { get; } = occurrenceId;
@@ -13,6 +14,29 @@ public sealed class TaskCard(Guid processId, Guid occurrenceId, string companyNa
     public string DisplayCompanyName { get; } = CompactCompanyName(companyName);
     public string TaxId { get; } = taxId;
     public string DeadlineLabel { get; } = deadlineLabel;
+    public DateTime ReceivedAtUtc { get; } = receivedAtUtc;
+    public DateTime? CompletedAtUtc { get; } = completedAtUtc;
+    public string ElapsedLabel
+    {
+        get => _elapsedLabel;
+        private set
+        {
+            if (_elapsedLabel == value)
+                return;
+            _elapsedLabel = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ElapsedLabel)));
+        }
+    }
+
+    public void UpdateElapsedTime()
+    {
+        var elapsed = (CompletedAtUtc ?? DateTime.UtcNow) - ReceivedAtUtc;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+        ElapsedLabel = elapsed.TotalDays >= 1
+            ? $"Tempo: {(int)elapsed.TotalDays}d {elapsed.Hours}h"
+            : $"Tempo: {(int)elapsed.TotalHours}h {elapsed.Minutes}min";
+    }
 
     public bool IsSelected
     {
@@ -47,10 +71,15 @@ public sealed class TaskCard(Guid processId, Guid occurrenceId, string companyNa
 public sealed record KanbanColumn(Guid Id, string Name, bool AllowsManualCard, IReadOnlyList<TaskCard> Cards);
 public sealed record BoardModel(Guid Id, string Name, IReadOnlyList<KanbanColumn> Columns);
 public sealed record BoardOption(Guid? Id, string Name, bool IsCreateNew = false, bool CanDelete = true);
-public sealed record BoardCreationRequest(string Name, IReadOnlyList<string> ColumnNames, int? AutomaticMoveAfterDays, string? AutomaticMoveTargetColumn);
+public sealed record CardFieldDefinitionInput(string Name, CardFieldType FieldType, bool IsRequired, bool ShowOnCard, EmailFieldSource EmailSource, Guid? Id = null);
+public sealed record BoardCreationRequest(string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
+public sealed record BoardRulesUpdateRequest(Guid BoardId, string Name, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
+public sealed record BoardRulesEditor(Guid BoardId, string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
 public sealed record ManualTaskCardInput(Guid BoardId, string ColumnName, string CompanyName, string TaxId, string? Competence, DateTime? DeadlineAtUtc);
+public sealed record CustomCardFieldEditor(Guid DefinitionId, string Name, CardFieldType FieldType, bool IsRequired, string Value);
+public sealed record CustomCardEditor(Guid BoardId, Guid? OccurrenceId, string BoardName, string CurrentColumn, DateTime ReceivedAtUtc, DateTime? CompletedAtUtc, DateTime? DeadlineAtUtc, IReadOnlyList<string> Columns, IReadOnlyList<CustomCardFieldEditor> Fields, string EmailSubject);
 public sealed record TaskCardDetails(Guid OccurrenceId, string CompanyName, string TaxId, string? Competence, DateTime ReceivedAtUtc, DateTime? DeadlineAtUtc, string CurrentColumn, string EmailSubject, IReadOnlyList<string> Columns);
 public sealed record WarningItem(Guid Id, string Title, string CompanyName, string TaxId, string Description, DateTime CreatedAtUtc);
 public sealed record EmailConnectionStatus(bool IsConfigured, bool IsConnected, string StatusText, string DetailText, string? ConnectedEmail, DateTime? LastSyncAtUtc);
 public sealed record EmailSyncSummary(bool Succeeded, bool Skipped, int MessagesScanned, int ProcessesCreated, int ApprovalsCreated, int IgnoredMessages, int FailedMessages, string Message);
-public sealed record AppNotification(string Title, string Message);
+public sealed record AppNotification(string Title, string Message, bool IsPersistent = false);

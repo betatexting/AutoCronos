@@ -11,6 +11,8 @@ public partial class NotificationWindow : Window
     public NotificationWindow(AppNotification notification)
     {
         InitializeComponent();
+        Title = notification.Title;
+        ShowInTaskbar = notification.IsPersistent;
         TitleTextBlock.Text = notification.Title;
         MessageTextBlock.Text = notification.Message;
         Loaded += (_, _) =>
@@ -18,7 +20,8 @@ public partial class NotificationWindow : Window
             var area = SystemParameters.WorkArea;
             Left = area.Right - Width - 18;
             Top = area.Bottom - Height - 18;
-            _closeTimer.Start();
+            if (!notification.IsPersistent)
+                _closeTimer.Start();
         };
         _closeTimer.Tick += (_, _) => Close();
         Closed += (_, _) => _closeTimer.Stop();

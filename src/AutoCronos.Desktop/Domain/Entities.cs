@@ -5,6 +5,8 @@ public enum DeadlineUnit { Hours, CalendarDays, BusinessDays }
 public enum OccurrenceStatus { Active, Completed }
 public enum ApprovalType { DuplicateNotice, ReactivateProcess, ChangeCompetence, MissingProcess }
 public enum ApprovalStatus { Pending, Approved, Rejected }
+public enum CardFieldType { Text, Number, Date }
+public enum EmailFieldSource { None, Subject, Sender, CompanyName, TaxId, Competence, ReceivedAt, Body }
 
 public sealed class OperationDefinition
 {
@@ -14,7 +16,20 @@ public sealed class OperationDefinition
     public List<KanbanColumnDefinition> Columns { get; set; } = [];
     public List<EmailRule> EmailRules { get; set; } = [];
     public List<DeadlineRule> DeadlineRules { get; set; } = [];
+    public List<CardFieldDefinition> CardFields { get; set; } = [];
     public List<Process> Processes { get; set; } = [];
+}
+
+public sealed class CardFieldDefinition
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OperationDefinitionId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public CardFieldType FieldType { get; set; }
+    public bool IsRequired { get; set; }
+    public bool ShowOnCard { get; set; }
+    public int SortOrder { get; set; }
+    public EmailFieldSource EmailSource { get; set; }
 }
 
 public sealed class KanbanColumnDefinition
@@ -67,6 +82,23 @@ public sealed class ProcessOccurrence
     public DateTime? CompletedAtUtc { get; set; }
     public Process? Process { get; set; }
     public List<ProcessHistoryEntry> History { get; set; } = [];
+    public List<CardFieldValue> FieldValues { get; set; } = [];
+}
+
+public sealed class CardFieldValue
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ProcessOccurrenceId { get; set; }
+    public Guid CardFieldDefinitionId { get; set; }
+    public string Value { get; set; } = string.Empty;
+}
+
+public sealed class EmailCardLink
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid IncomingEmailId { get; set; }
+    public Guid ProcessOccurrenceId { get; set; }
+    public Guid OperationDefinitionId { get; set; }
 }
 
 public sealed class ProcessHistoryEntry

@@ -1,0 +1,71 @@
+<Window
+    x:Class="AutoCronos.Desktop.Windows.CustomCardDetailsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Card"
+    Width="620"
+    Height="690"
+    MinWidth="520"
+    MinHeight="540"
+    WindowStartupLocation="CenterOwner"
+    Background="#F5F7FA">
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock x:Name="HeadingTextBlock" FontSize="24" FontWeight="SemiBold" Foreground="#172033" />
+            <TextBlock x:Name="DescriptionTextBlock" Margin="0,5,0,18" Foreground="#61708A" TextWrapping="Wrap" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,8,0">
+                <ItemsControl x:Name="FieldsItemsControl">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,15">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#27344B" />
+                                    <TextBlock Text=" *" Foreground="#A4382E">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRequired}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding TypeHint}" Margin="6,0,0,0" Foreground="#7A879B" FontSize="11" />
+                                </StackPanel>
+                                <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" Padding="9,7" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="Prazo" FontWeight="SemiBold" Foreground="#27344B" />
+                        <TextBox x:Name="DeadlineTextBox" Margin="0,6,0,0" Padding="9,7" ToolTip="Formato: dd/MM/aaaa HH:mm" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                        <TextBlock Text="Coluna" FontWeight="SemiBold" Foreground="#27344B" />
+                        <ComboBox x:Name="ColumnComboBox" Margin="0,6,0,0" Padding="7,5" />
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="Tempo contabilizado" FontWeight="SemiBold" Foreground="#27344B" />
+                <TextBlock x:Name="ElapsedTimeTextBlock" Margin="0,6,0,16" Foreground="#61708A" />
+                <StackPanel x:Name="OriginPanel">
+                    <TextBlock Text="Origem" FontWeight="SemiBold" Foreground="#27344B" />
+                    <TextBox x:Name="EmailSubjectTextBox" Margin="0,6,0,8" Padding="9,7" TextWrapping="Wrap" IsReadOnly="True" Background="#EEF2F7" Foreground="#4D5B72" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Cancelar" IsCancel="True" Padding="14,7" Margin="0,0,8,0" Background="White" BorderBrush="#D6DCE6" />
+            <Button x:Name="SaveButton" Content="Salvar" Click="Save_Click" Padding="16,7" Background="#153A5B" Foreground="White" BorderThickness="0" />
+        </StackPanel>
+    </Grid>
+</Window>
