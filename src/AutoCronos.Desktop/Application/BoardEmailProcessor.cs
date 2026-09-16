@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using AutoCronos.Desktop.Domain;
 using AutoCronos.Desktop.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -18,12 +17,12 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
 
         if (input.IsReply)
         {
-            database.IncomingEmails.Add(CreateIncomingEmail(input, null));
+            database.IncomingEmails.Add(IncomingEmailFactory.Create(input, null));
             database.SaveChanges();
             return new EmailProcessingResult(false, false, null, "Resposta de e-mail registrada sem criar card.");
         }
 
-        var normalizedSubject = Normalize(input.Subject);
+        var normalizedSubject = DomainText.NormalizeSubject(input.Subject);
         var operations = database.Operations
             .Include(operation => operation.EmailRules)
             .Include(operation => operation.Columns)
@@ -35,23 +34,22 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
             .SelectMany(operation => operation.EmailRules.Select(rule => new
             {
                 Operation = operation,
-                PatternLength = Normalize(rule.SubjectPattern).Length,
-                Matches = normalizedSubject.Contains(Normalize(rule.SubjectPattern), StringComparison.Ordinal)
+                Pattern = DomainText.NormalizeSubject(rule.SubjectPattern)
             }))
-            .Where(match => match.Matches && match.PatternLength > 0)
-            .OrderByDescending(match => match.PatternLength)
+            .Where(match => match.Pattern.Length > 0 && normalizedSubject.Contains(match.Pattern, StringComparison.Ordinal))
+            .OrderByDescending(match => match.Pattern.Length)
             .ToList();
 
         if (matches.Count == 0)
         {
-            database.IncomingEmails.Add(CreateIncomingEmail(input, null));
+            database.IncomingEmails.Add(IncomingEmailFactory.Create(input, null));
             database.SaveChanges();
             return new EmailProcessingResult(false, false, null, "E-mail registrado, mas sem regra reconhecida para qualquer quadro.");
         }
 
-        var bestLength = matches[0].PatternLength;
+        var bestLength = matches[0].Pattern.Length;
         var bestOperations = matches
-            .Where(match => match.PatternLength == bestLength)
+            .Where(match => match.Pattern.Length == bestLength)
             .Select(match => match.Operation)
             .DistinctBy(operation => operation.Id)
             .ToList();
@@ -60,7 +58,7 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
             : bestOperations.SingleOrDefault(candidate => candidate.Name == DevolutionOperationName);
         if (operation is null)
         {
-            database.IncomingEmails.Add(CreateIncomingEmail(input, null));
+            database.IncomingEmails.Add(IncomingEmailFactory.Create(input, null));
             database.SaveChanges();
             return new EmailProcessingResult(false, false, null, "E-mail registrado, mas o assunto corresponde a mais de um quadro com a mesma prioridade.");
         }
@@ -76,12 +74,12 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
         var initialColumn = operation.Columns.OrderBy(column => column.SortOrder).FirstOrDefault();
         if (initialColumn is null)
         {
-            database.IncomingEmails.Add(CreateIncomingEmail(input, null));
+            database.IncomingEmails.Add(IncomingEmailFactory.Create(input, null));
             database.SaveChanges();
             return new EmailProcessingResult(false, false, null, $"O quadro {operation.Name} nao possui coluna inicial.");
         }
 
-        var email = CreateIncomingEmail(input, EmailEventType.InitialNotice);
+        var email = IncomingEmailFactory.Create(input, EmailEventType.InitialNotice);
         var occurrence = new ProcessOccurrence
         {
             Number = 1,
@@ -128,18 +126,6 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
         return new EmailProcessingResult(false, true, null, $"Card criado no quadro {operation.Name}.");
     }
 
-    private static IncomingEmail CreateIncomingEmail(EmailInput input, EmailEventType? eventType) => new()
-    {
-        ProviderMessageId = input.ProviderMessageId,
-        Subject = input.Subject,
-        TaxId = NormalizeTaxId(input.TaxId),
-        CompanyName = input.CompanyName?.Trim(),
-        Competence = input.Competence,
-        DetectedEventType = eventType,
-        ReceivedAtUtc = input.ReceivedAtUtc,
-        IsProcessed = true
-    };
-
     private static string ValueFromEmail(CardFieldDefinition definition, EmailInput input) => definition.EmailSource switch
     {
         EmailFieldSource.Subject => input.Subject,
@@ -159,42 +145,6 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
         var rule = operation.DeadlineRules.FirstOrDefault(rule => rule.EventType == EmailEventType.InitialNotice);
         if (rule is null)
             return null;
-        return rule.Unit switch
-        {
-            DeadlineUnit.Hours => receivedAtUtc.AddHours(rule.Amount),
-            DeadlineUnit.CalendarDays => receivedAtUtc.AddDays(rule.Amount),
-            DeadlineUnit.BusinessDays => AddBusinessDays(receivedAtUtc, rule.Amount),
-            _ => null
-        };
-    }
-
-    private static DateTime AddBusinessDays(DateTime initial, int days)
-    {
-        var result = initial;
-        while (days > 0)
-        {
-            result = result.AddDays(1);
-            if (result.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
-                days--;
-        }
-        return result;
-    }
-
-    private static string? NormalizeTaxId(string? value)
-    {
-        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
-        return digits.Length is 11 or 14 ? digits : null;
-    }
-
-    private static string Normalize(string value)
-    {
-        var decomposed = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(decomposed.Length);
-        foreach (var character in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-                builder.Append(char.ToUpperInvariant(character));
-        }
-        return builder.ToString().Normalize(NormalizationForm.FormC);
+        return DeadlineCalculator.Calculate(receivedAtUtc, rule.Unit, rule.Amount);
     }
 }

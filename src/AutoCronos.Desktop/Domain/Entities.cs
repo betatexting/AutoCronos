@@ -3,7 +3,7 @@ namespace AutoCronos.Desktop.Domain;
 public enum EmailEventType { InitialNotice, CompetenceChange }
 public enum DeadlineUnit { Hours, CalendarDays, BusinessDays }
 public enum OccurrenceStatus { Active, Completed }
-public enum ApprovalType { DuplicateNotice, ReactivateProcess, ChangeCompetence, MissingProcess }
+public enum ApprovalType { DuplicateNotice, ReactivateProcess, ChangeCompetence, MissingProcess, CreateSuiteTicket }
 public enum ApprovalStatus { Pending, Approved, Rejected }
 public enum CardFieldType { Text, Number, Date }
 public enum EmailFieldSource { None, Subject, Sender, CompanyName, TaxId, Competence, ReceivedAt, Body }
@@ -18,6 +18,7 @@ public sealed class OperationDefinition
     public List<DeadlineRule> DeadlineRules { get; set; } = [];
     public List<CardFieldDefinition> CardFields { get; set; } = [];
     public List<Process> Processes { get; set; } = [];
+    public bool CreatesSuiteTickets { get; set; }
 }
 
 public sealed class CardFieldDefinition
@@ -118,6 +119,7 @@ public sealed class IncomingEmail
     public string? TaxId { get; set; }
     public string? CompanyName { get; set; }
     public string? Competence { get; set; }
+    public string? Sender { get; set; }
     public EmailEventType? DetectedEventType { get; set; }
     public DateTime ReceivedAtUtc { get; set; }
     public bool IsProcessed { get; set; }
@@ -130,8 +132,21 @@ public sealed class ApprovalItem
     public ApprovalType Type { get; set; }
     public ApprovalStatus Status { get; set; } = ApprovalStatus.Pending;
     public Guid? ProcessId { get; set; }
+    public Guid? ProcessOccurrenceId { get; set; }
     public Guid? IncomingEmailId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
+    public int? SuiteTicketTypeId { get; set; }
+    public int? SuiteTicketOriginId { get; set; }
+    public int? SuiteTicketSectorId { get; set; }
+    public int? SuiteTicketExecutorId { get; set; }
+    public string? SuiteTicketCustomerTaxId { get; set; }
+    public string? SuiteTicketSourceEmail { get; set; }
+    public string? SuiteTicketCustomerIds { get; set; }
+    public string? SuiteTicketTitle { get; set; }
+    public string? SuiteTicketDescription { get; set; }
+    public long? SuiteTicketId { get; set; }
+    public string? SuiteTicketProtocol { get; set; }
+    public string? SuiteTicketProtocols { get; set; }
 }

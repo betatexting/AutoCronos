@@ -2,6 +2,28 @@
 
 dotnet run --project .\src\AutoCronos.Desktop\AutoCronos.Desktop.csproj
 
+# Gerar executável
+
+Execute `Gerar-Executavel.bat` na raiz do projeto. Ele publica a versão Release mais recente em `dist/AutoCronos.Desktop.exe` para Windows x64.
+
+Também pode ser executado pelo PowerShell:
+
+```powershell
+.\build-dist.ps1
+```
+
+O executável é autocontido e não requer a instalação prévia do .NET na máquina de destino.
+
+# Integração Suite360
+
+O usuário final não informa chave, IDs ou configurações do chamado ao criar um quadro. Antes da entrega, o responsável pela implantação deve provisionar a chave uma única vez para a conta Windows que executará o aplicativo:
+
+```powershell
+.\Configurar-Suite360.ps1
+```
+
+A chave é solicitada no terminal sem ser exibida e armazenada protegida pelo Windows. Como alternativa de implantação, use a variável de ambiente `AUTOCRONOS_SUITE360_API_KEY`.
+
 # Credenciais do Google
 
 Coloque um unico arquivo JSON de credenciais OAuth do tipo **Aplicativo para computador** em `secret_Key/`, na raiz do repositorio.

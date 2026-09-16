@@ -33,6 +33,26 @@
 
     <Canvas Width="160" Height="320">
         <Button
+            x:Name="WhatsAppButton"
+            Canvas.Left="58"
+            Canvas.Top="228"
+            Style="{StaticResource DotButton}"
+            ToolTip="Monitor de atendimentos"
+            IsHitTestVisible="False"
+            Tag="WhatsApp"
+            Click="Navigate_Click"
+            RenderTransformOrigin="0.5,0.5">
+            <Button.RenderTransform>
+                <TranslateTransform x:Name="WhatsAppOffset" Y="-21" />
+            </Button.RenderTransform>
+            <Ellipse Width="16" Height="16" Fill="#18A96B" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <ScaleTransform x:Name="WhatsAppDotScale" ScaleX="1" ScaleY="1" />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Button>
+
+        <Button
             x:Name="LauncherButton"
             Canvas.Left="48"
             Canvas.Top="218"
@@ -69,10 +89,11 @@
             Style="{StaticResource DotButton}"
             ToolTip="Quadro de tarefas"
             IsHitTestVisible="False"
-            Click="Board_Click"
+            Tag="Board"
+            Click="Navigate_Click"
             RenderTransformOrigin="0.5,0.5">
             <Button.RenderTransform>
-                <TranslateTransform x:Name="BoardOffset" Y="-14" />
+                <TranslateTransform x:Name="BoardOffset" Y="-7" />
             </Button.RenderTransform>
             <Ellipse Width="16" Height="16" Fill="#2E7D5B" RenderTransformOrigin="0.5,0.5">
                 <Ellipse.RenderTransform>
@@ -88,10 +109,11 @@
             Style="{StaticResource DotButton}"
             ToolTip="Integração de e-mail"
             IsHitTestVisible="False"
-            Click="Email_Click"
+            Tag="Email"
+            Click="Navigate_Click"
             RenderTransformOrigin="0.5,0.5">
             <Button.RenderTransform>
-                <TranslateTransform x:Name="EmailOffset" />
+                <TranslateTransform x:Name="EmailOffset" Y="7" />
             </Button.RenderTransform>
             <Ellipse Width="16" Height="16" Fill="#2563EB" RenderTransformOrigin="0.5,0.5">
                 <Ellipse.RenderTransform>
@@ -107,10 +129,11 @@
             Style="{StaticResource DotButton}"
             ToolTip="Pendências"
             IsHitTestVisible="False"
-            Click="Warnings_Click"
+            Tag="Warnings"
+            Click="Navigate_Click"
             RenderTransformOrigin="0.5,0.5">
             <Button.RenderTransform>
-                <TranslateTransform x:Name="WarningsOffset" Y="14" />
+                <TranslateTransform x:Name="WarningsOffset" Y="21" />
             </Button.RenderTransform>
             <Ellipse Width="16" Height="16" Fill="#D97706" RenderTransformOrigin="0.5,0.5">
                 <Ellipse.RenderTransform>

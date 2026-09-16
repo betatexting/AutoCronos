@@ -12,4 +12,14 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="..\..\arte\simbolo background.png" Link="Assets\background-symbol.png" />
+    <Resource Include="..\..\arte\fontes\BEBAS_NEUE\BebasNeue-Regular.ttf" Link="Assets\Fonts\BebasNeue-Regular.ttf" />
+    <Resource Include="..\..\arte\fontes\HORIZON\Horizon.otf" Link="Assets\Fonts\Horizon.otf" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Suite360ApiKeyFile)' != '' and Exists('$(Suite360ApiKeyFile)')">
+    <EmbeddedResource Include="$(Suite360ApiKeyFile)" LogicalName="AutoCronos.Suite360ApiKey" />
+  </ItemGroup>
+
 </Project>

@@ -10,12 +10,21 @@ namespace AutoCronos.Desktop;
 public partial class App : System.Windows.Application
 {
     private readonly AutoCronos.Desktop.Services.LocalDataService _data = new();
+    private readonly AutoCronos.Desktop.Services.WhatsAppMonitorSettingsService _whatsAppSettings = new();
+    private readonly AutoCronos.Desktop.Services.WhatsAppMonitoringService _whatsAppMonitor;
     private DispatcherTimer? _emailSyncTimer;
     private DispatcherTimer? _deadlineTimer;
     private bool _emailSyncInProgress;
     private bool _deadlineCheckInProgress;
     private bool _notificationVisible;
     private readonly Queue<AppNotification> _notificationQueue = new();
+
+    public App()
+    {
+        _whatsAppMonitor = new AutoCronos.Desktop.Services.WhatsAppMonitoringService(
+            new AutoCronos.Desktop.Services.Suite360IntegrationService(),
+            _whatsAppSettings);
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -25,7 +34,8 @@ public partial class App : System.Windows.Application
         new AutoCronos.Desktop.Services.StartupService().Enable();
         ConfigureEmailSyncTimer();
         ConfigureDeadlineTimer();
-        new AutoCronos.Desktop.Windows.FloatingLauncherWindow(OpenBoard, OpenEmailSettings, OpenWarnings).Show();
+        _whatsAppMonitor.Start();
+        new AutoCronos.Desktop.Windows.FloatingLauncherWindow(OpenBoard, OpenEmailSettings, OpenWarnings, OpenWhatsAppMonitor).Show();
 
         foreach (var notification in startupNotifications)
             _notificationQueue.Enqueue(notification with { IsPersistent = true });
@@ -61,6 +71,26 @@ public partial class App : System.Windows.Application
             ?? new AutoCronos.Desktop.Windows.WarningWindow(_data);
         if (!window.IsVisible) window.Show();
         window.Activate();
+    }
+
+    private void OpenWhatsAppMonitor()
+    {
+        var window = Current.Windows.OfType<AutoCronos.Desktop.Windows.WhatsAppMonitorWindow>().FirstOrDefault();
+        if (window is null)
+        {
+            new AutoCronos.Desktop.Windows.WhatsAppMonitorWindow(_whatsAppMonitor, _whatsAppSettings).Show();
+            return;
+        }
+
+        if (!window.IsVisible) window.Show();
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        window.Activate();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _whatsAppMonitor.Dispose();
+        base.OnExit(e);
     }
 
     private void ConfigureEmailSyncTimer()

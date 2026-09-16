@@ -120,12 +120,23 @@
                         <TextBox x:Name="TargetColumnTextBox" Text="Em Andamento" Margin="0,6,0,0" Padding="9,7" />
                     </StackPanel>
                 </Grid>
+
+                <CheckBox x:Name="CreateSuiteTicketCheckBox"
+                          Margin="0,22,0,0"
+                          Content="Abrir a criacao de chamado no Suite360 quando o card entrar em andamento"
+                          Foreground="#27344B"
+                          FontWeight="SemiBold" />
+                <TextBlock Text="Ao entrar em Em Andamento, o formulario sera aberto com dados do Suite360; o envio continua exigindo aprovacao humana."
+                           Margin="0,4,0,0"
+                           Foreground="#61708A"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
             </StackPanel>
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="Cancelar" IsCancel="True" Padding="14,7" Margin="0,0,8,0" Background="White" BorderBrush="#D6DCE6" />
-            <Button x:Name="CreateButton" Content="Criar quadro" Click="Save_Click" Padding="16,7" Background="#153A5B" Foreground="White" BorderThickness="0" />
+            <Button Content="Cancelar" IsCancel="True" Margin="0,0,8,0" Style="{StaticResource FormSecondaryButton}" />
+            <Button x:Name="CreateButton" Content="Criar quadro" Click="Save_Click" Style="{StaticResource FormPrimaryButton}" />
         </StackPanel>
     </Grid>
 </Window>

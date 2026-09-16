@@ -3,7 +3,7 @@ using AutoCronos.Desktop.Services;
 
 namespace AutoCronos.Desktop.Windows;
 
-public partial class EmailSettingsWindow : Window
+public partial class EmailSettingsWindow : ChromeWindow
 {
     private readonly LocalDataService _data;
 
@@ -21,16 +21,20 @@ public partial class EmailSettingsWindow : Window
     private void RefreshStatus()
     {
         var status = _data.GetEmailStatus();
-        StatusTextBlock.Text = status.StatusText;
-        DetailTextBlock.Text = status.DetailText;
+        StatusTextBlock.Text = status.IsConnected
+            ? "GMAIL CONECTADO"
+            : status.IsConfigured
+                ? "GMAIL CONFIGURADO"
+                : "GMAIL NAO CONFIGURADO";
+        DetailTextBlock.Text = status.DetailText.ToUpperInvariant();
         ConnectedEmailTextBlock.Text = string.IsNullOrWhiteSpace(status.ConnectedEmail)
-            ? "Nenhuma conta conectada."
-            : $"Conta conectada: {status.ConnectedEmail}";
+            ? "NENHUMA CONTA CONECTADA"
+            : $"CONTA CONECTADA: {status.ConnectedEmail.ToUpperInvariant()}";
 
         DisconnectButton.IsEnabled = status.IsConnected;
         SyncButton.IsEnabled = status.IsConnected;
         ConnectButton.IsEnabled = status.IsConfigured;
-        ConnectButton.Content = status.IsConnected ? "Conectar outra conta" : "Conectar com Google";
+        ConnectButton.Content = status.IsConnected ? "CONECTAR OUTRA CONTA" : "CONECTAR COM GOOGLE";
     }
 
     private async void Connect_Click(object sender, RoutedEventArgs e)
@@ -46,10 +50,10 @@ public partial class EmailSettingsWindow : Window
             return;
 
         ConnectButton.IsEnabled = false;
-        StatusTextBlock.Text = isChangingAccount ? "Escolha a nova conta no Google" : "Aguardando autorizacao no Google";
+        StatusTextBlock.Text = isChangingAccount ? "ESCOLHA A NOVA CONTA NO GOOGLE" : "AGUARDANDO AUTORIZACAO NO GOOGLE";
         DetailTextBlock.Text = isChangingAccount
-            ? "Selecione a conta que passara a ser usada pelo AutoCronos na janela do navegador."
-            : "Conclua o acesso na janela do navegador. O AutoCronos continuara automaticamente depois disso.";
+            ? "SELECIONE A CONTA QUE PASSARA A SER USADA PELO AUTOCRONOS NA JANELA DO NAVEGADOR."
+            : "CONCLUA O ACESSO NA JANELA DO NAVEGADOR. O AUTOCRONOS CONTINUARA AUTOMATICAMENTE DEPOIS DISSO.";
         try
         {
             var status = isChangingAccount
@@ -77,4 +81,5 @@ public partial class EmailSettingsWindow : Window
         RefreshStatus();
         MessageBox.Show(this, summary.Message, "Sincronizacao de e-mail", MessageBoxButton.OK, summary.Succeeded ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
+
 }

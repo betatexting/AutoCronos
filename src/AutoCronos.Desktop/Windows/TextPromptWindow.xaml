@@ -20,8 +20,8 @@
         </StackPanel>
         <TextBox x:Name="ValueTextBox" Grid.Row="1" Padding="9,7" />
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
-            <Button Content="Cancelar" IsCancel="True" Padding="14,7" Margin="0,0,8,0" Background="White" BorderBrush="#D6DCE6" />
-            <Button Content="Adicionar" IsDefault="True" Click="Confirm_Click" Padding="16,7" Background="#153A5B" Foreground="White" BorderThickness="0" />
+            <Button Content="Cancelar" IsCancel="True" Margin="0,0,8,0" Style="{StaticResource FormSecondaryButton}" />
+            <Button Content="Adicionar" IsDefault="True" Click="Confirm_Click" Style="{StaticResource FormPrimaryButton}" />
         </StackPanel>
     </Grid>
 </Window>

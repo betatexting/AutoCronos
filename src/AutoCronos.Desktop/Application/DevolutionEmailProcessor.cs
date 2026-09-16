@@ -1,13 +1,8 @@
-using System.Globalization;
-using System.Text;
 using AutoCronos.Desktop.Domain;
 using AutoCronos.Desktop.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace AutoCronos.Desktop.Application;
-
-public sealed record EmailInput(string ProviderMessageId, string Subject, string? TaxId, string? CompanyName, string? Competence, DateTime ReceivedAtUtc, string Sender, string Body, bool IsReply);
-public sealed record EmailProcessingResult(bool AlreadyProcessed, bool CreatedProcess, Guid? ApprovalId, string Message);
 
 /// <summary>Applies the configured Devolucoes rules without coupling business decisions to Gmail.</summary>
 public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
@@ -25,17 +20,7 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
         if (operation is null) return new(false, false, null, "Operacao Devolucoes nao configurada.");
 
         var eventType = IdentifyEvent(operation.EmailRules, input.Subject);
-        var email = new IncomingEmail
-        {
-            ProviderMessageId = input.ProviderMessageId,
-            Subject = input.Subject,
-            TaxId = NormalizeTaxId(input.TaxId),
-            CompanyName = input.CompanyName?.Trim(),
-            Competence = input.Competence,
-            DetectedEventType = eventType,
-            ReceivedAtUtc = input.ReceivedAtUtc,
-            IsProcessed = true
-        };
+        var email = IncomingEmailFactory.Create(input, eventType);
         database.IncomingEmails.Add(email);
 
         if (eventType is null || string.IsNullOrWhiteSpace(email.TaxId))
@@ -121,50 +106,19 @@ public sealed class DevolutionEmailProcessor(AutoCronosDbContext database)
 
     private static EmailEventType? IdentifyEvent(IEnumerable<EmailRule> rules, string subject)
     {
-        var normalizedSubject = Normalize(subject);
+        var normalizedSubject = DomainText.NormalizeSubject(subject);
         return rules
-            .Where(rule => normalizedSubject.Contains(Normalize(rule.SubjectPattern), StringComparison.Ordinal))
-            .OrderByDescending(rule => Normalize(rule.SubjectPattern).Length)
+            .Select(rule => new { Rule = rule, Pattern = DomainText.NormalizeSubject(rule.SubjectPattern) })
+            .Where(candidate => normalizedSubject.Contains(candidate.Pattern, StringComparison.Ordinal))
+            .OrderByDescending(candidate => candidate.Pattern.Length)
             .FirstOrDefault()
-            ?.EventType;
+            ?.Rule.EventType;
     }
 
     private DateTime? CalculateDeadline(OperationDefinition operation, EmailEventType type, DateTime receivedAtUtc)
     {
         var rule = operation.DeadlineRules.SingleOrDefault(x => x.EventType == type);
         if (rule is null) return null;
-        return rule.Unit switch
-        {
-            DeadlineUnit.Hours => receivedAtUtc.AddHours(rule.Amount),
-            DeadlineUnit.CalendarDays => receivedAtUtc.AddDays(rule.Amount),
-            DeadlineUnit.BusinessDays => AddBusinessDays(receivedAtUtc, rule.Amount),
-            _ => null
-        };
-    }
-
-    private static DateTime AddBusinessDays(DateTime initial, int days)
-    {
-        var result = initial;
-        while (days > 0)
-        {
-            result = result.AddDays(1);
-            if (result.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday) days--;
-        }
-        return result;
-    }
-
-    private static string? NormalizeTaxId(string? value)
-    {
-        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
-        return digits.Length is 11 or 14 ? digits : null;
-    }
-
-    private static string Normalize(string value)
-    {
-        var decomposed = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(decomposed.Length);
-        foreach (var character in decomposed)
-            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark) builder.Append(character);
-        return builder.ToString().Normalize(NormalizationForm.FormC).ToUpperInvariant();
+        return DeadlineCalculator.Calculate(receivedAtUtc, rule.Unit, rule.Amount);
     }
 }

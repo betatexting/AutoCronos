@@ -14,21 +14,23 @@ public partial class FloatingLauncherWindow : Window
     private const int OrbitDurationMilliseconds = 1800;
     private const int StackDurationMilliseconds = 600;
 
-    private static readonly double[] InitialYPositions = [-14, 0, 14];
-    private static readonly double[] OrbitAngles = [-90, 30, 150];
-    private static readonly double[] FinalYPositions = [-132, -88, -44];
+    private static readonly double[] InitialYPositions = [-21, -7, 7, 21];
+    private static readonly double[] OrbitAngles = [-90, 0, 90, 180];
+    private static readonly double[] FinalYPositions = [-176, -132, -88, -44];
 
     private readonly Action _openBoard;
     private readonly Action _openEmail;
     private readonly Action _openWarnings;
+    private readonly Action _openWhatsApp;
     private bool _isMenuOpen;
     private bool _isAnimating;
 
-    public FloatingLauncherWindow(Action openBoard, Action openEmail, Action openWarnings)
+    public FloatingLauncherWindow(Action openBoard, Action openEmail, Action openWarnings, Action openWhatsApp)
     {
         _openBoard = openBoard;
         _openEmail = openEmail;
         _openWarnings = openWarnings;
+        _openWhatsApp = openWhatsApp;
         InitializeComponent();
         Loaded += (_, _) =>
         {
@@ -49,9 +51,20 @@ public partial class FloatingLauncherWindow : Window
             await OpenMenuAsync();
     }
 
-    private async void Board_Click(object sender, RoutedEventArgs e) => await NavigateAsync(_openBoard);
-    private async void Email_Click(object sender, RoutedEventArgs e) => await NavigateAsync(_openEmail);
-    private async void Warnings_Click(object sender, RoutedEventArgs e) => await NavigateAsync(_openWarnings);
+    private async void Navigate_Click(object sender, RoutedEventArgs e)
+    {
+        var destination = (sender as FrameworkElement)?.Tag switch
+        {
+            "Board" => _openBoard,
+            "Email" => _openEmail,
+            "Warnings" => _openWarnings,
+            "WhatsApp" => _openWhatsApp,
+            _ => null
+        };
+
+        if (destination is not null)
+            await NavigateAsync(destination);
+    }
 
     private async Task NavigateAsync(Action destination)
     {
@@ -201,14 +214,15 @@ public partial class FloatingLauncherWindow : Window
         }
     }
 
-    private TranslateTransform[] GetDotOffsets() => [BoardOffset, EmailOffset, WarningsOffset];
-    private ScaleTransform[] GetDotScales() => [BoardDotScale, EmailDotScale, WarningsDotScale];
+    private TranslateTransform[] GetDotOffsets() => [WhatsAppOffset, BoardOffset, EmailOffset, WarningsOffset];
+    private ScaleTransform[] GetDotScales() => [WhatsAppDotScale, BoardDotScale, EmailDotScale, WarningsDotScale];
 
     private void SetDotButtonsEnabled(bool enabled)
     {
         BoardButton.IsHitTestVisible = enabled;
         EmailButton.IsHitTestVisible = enabled;
         WarningsButton.IsHitTestVisible = enabled;
+        WhatsAppButton.IsHitTestVisible = enabled;
     }
 
     private static Task AnimateAsync(int durationMilliseconds, Action<double> update)

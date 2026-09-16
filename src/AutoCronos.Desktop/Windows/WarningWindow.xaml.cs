@@ -1,9 +1,12 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using AutoCronos.Desktop.Domain;
 using AutoCronos.Desktop.Services;
 
 namespace AutoCronos.Desktop.Windows;
 
-public partial class WarningWindow : Window
+public partial class WarningWindow : ChromeWindow
 {
     private readonly LocalDataService _data;
 
@@ -20,13 +23,34 @@ public partial class WarningWindow : Window
 
     private void RefreshWarnings() => DataContext = _data.Warnings;
 
-    private async void Approve_Click(object sender, RoutedEventArgs e) => await ResolveAsync(sender, true);
-    private async void Reject_Click(object sender, RoutedEventArgs e) => await ResolveAsync(sender, false);
-
-    private async Task ResolveAsync(object sender, bool approve)
+    private async void Resolve_Click(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).Tag is not Guid id) return;
-        await _data.ResolveApprovalAsync(id, approve);
-        RefreshWarnings();
+        if (sender is not Button { Tag: WarningItem warning, CommandParameter: bool approve })
+            return;
+
+        try
+        {
+            if (approve && warning.Type == ApprovalType.CreateSuiteTicket)
+            {
+                await SuiteTicketApprovalWorkflow.OpenAsync(this, _data, warning.Id);
+            }
+            else
+            {
+                await _data.ResolveApprovalAsync(warning.Id, approve);
+            }
+            RefreshWarnings();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Resolver pendencia", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void PendingItems_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not DependencyObject element)
+            return;
+        ScrollViewerWheel.Scroll(element, e.Delta);
+        e.Handled = true;
     }
 }

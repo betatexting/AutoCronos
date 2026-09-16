@@ -72,14 +72,35 @@ public sealed record KanbanColumn(Guid Id, string Name, bool AllowsManualCard, I
 public sealed record BoardModel(Guid Id, string Name, IReadOnlyList<KanbanColumn> Columns);
 public sealed record BoardOption(Guid? Id, string Name, bool IsCreateNew = false, bool CanDelete = true);
 public sealed record CardFieldDefinitionInput(string Name, CardFieldType FieldType, bool IsRequired, bool ShowOnCard, EmailFieldSource EmailSource, Guid? Id = null);
-public sealed record BoardCreationRequest(string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
-public sealed record BoardRulesUpdateRequest(Guid BoardId, string Name, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
-public sealed record BoardRulesEditor(Guid BoardId, string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn);
+public sealed record BoardCreationRequest(string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn, bool CreatesSuiteTickets);
+public sealed record BoardRulesUpdateRequest(Guid BoardId, string Name, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn, bool CreatesSuiteTickets);
+public sealed record BoardRulesEditor(Guid BoardId, string Name, IReadOnlyList<string> ColumnNames, IReadOnlyList<CardFieldDefinitionInput> CardFields, IReadOnlyList<string> EmailSubjectPatterns, int? AutomaticMoveAmount, DeadlineUnit? AutomaticMoveUnit, string? AutomaticMoveTargetColumn, bool CreatesSuiteTickets);
 public sealed record ManualTaskCardInput(Guid BoardId, string ColumnName, string CompanyName, string TaxId, string? Competence, DateTime? DeadlineAtUtc);
 public sealed record CustomCardFieldEditor(Guid DefinitionId, string Name, CardFieldType FieldType, bool IsRequired, string Value);
 public sealed record CustomCardEditor(Guid BoardId, Guid? OccurrenceId, string BoardName, string CurrentColumn, DateTime ReceivedAtUtc, DateTime? CompletedAtUtc, DateTime? DeadlineAtUtc, IReadOnlyList<string> Columns, IReadOnlyList<CustomCardFieldEditor> Fields, string EmailSubject);
 public sealed record TaskCardDetails(Guid OccurrenceId, string CompanyName, string TaxId, string? Competence, DateTime ReceivedAtUtc, DateTime? DeadlineAtUtc, string CurrentColumn, string EmailSubject, IReadOnlyList<string> Columns);
-public sealed record WarningItem(Guid Id, string Title, string CompanyName, string TaxId, string Description, DateTime CreatedAtUtc);
+public sealed record WarningItem(Guid Id, ApprovalType Type, string Title, string CompanyName, string TaxId, string Description, DateTime CreatedAtUtc);
+public sealed record SuiteCustomerCandidate(long Id, string CompanyName, string? TaxId);
+public sealed record SuiteTicketOption(long Id, string Name, long? SectorId = null);
+public sealed record SuiteTicketApprovalEditor(
+    Guid ApprovalId,
+    string ActivityName,
+    string? SourceEmail,
+    string Title,
+    string Description,
+    IReadOnlyList<SuiteCustomerCandidate> Candidates,
+    IReadOnlyList<SuiteTicketOption> TicketTypes,
+    IReadOnlyList<SuiteTicketOption> Origins,
+    IReadOnlyList<SuiteTicketOption> Sectors,
+    IReadOnlyList<SuiteTicketOption> Executors);
+public sealed record SuiteTicketSubmission(
+    IReadOnlyList<long> CustomerIds,
+    long TicketTypeId,
+    long OriginId,
+    long SectorId,
+    long? ExecutorId,
+    string Title,
+    string Description);
 public sealed record EmailConnectionStatus(bool IsConfigured, bool IsConnected, string StatusText, string DetailText, string? ConnectedEmail, DateTime? LastSyncAtUtc);
 public sealed record EmailSyncSummary(bool Succeeded, bool Skipped, int MessagesScanned, int ProcessesCreated, int ApprovalsCreated, int IgnoredMessages, int FailedMessages, string Message);
 public sealed record AppNotification(string Title, string Message, bool IsPersistent = false);

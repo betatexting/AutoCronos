@@ -64,8 +64,8 @@
             </StackPanel>
         </ScrollViewer>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="Cancelar" IsCancel="True" Padding="14,7" Margin="0,0,8,0" Background="White" BorderBrush="#D6DCE6" />
-            <Button x:Name="SaveButton" Content="Salvar" Click="Save_Click" Padding="16,7" Background="#153A5B" Foreground="White" BorderThickness="0" />
+            <Button Content="Cancelar" IsCancel="True" Margin="0,0,8,0" Style="{StaticResource FormSecondaryButton}" />
+            <Button x:Name="SaveButton" Content="Salvar" Click="Save_Click" Style="{StaticResource FormPrimaryButton}" />
         </StackPanel>
     </Grid>
 </Window>

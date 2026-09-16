@@ -4,6 +4,110 @@
              xmlns:local="clr-namespace:AutoCronos.Desktop"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-         
+        <Style x:Key="ChromeWindowControlButton" TargetType="Button">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,2,0" />
+            <Setter Property="Foreground" Value="#F1F1F1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Arial" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ControlBorder" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ControlBorder" Property="Background" Value="#303030" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="17,7" />
+            <Setter Property="Foreground" Value="#F8F8F8" />
+            <Setter Property="Background" Value="#006F4D" />
+            <Setter Property="BorderBrush" Value="#C0C0C0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="./Assets/Fonts/#Bebas Neue" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ActionBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.84" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.68" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.38" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CompactActionButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Width" Value="56" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="9" />
+        </Style>
+
+        <Style x:Key="ApproveActionButton" TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+            <Setter Property="Background" Value="#009B66" />
+            <Setter Property="Foreground" Value="#F7F7F7" />
+        </Style>
+
+        <Style x:Key="RejectActionButton" TargetType="Button" BasedOn="{StaticResource CompactActionButton}">
+            <Setter Property="Background" Value="#D00000" />
+            <Setter Property="Foreground" Value="#F7F7F7" />
+        </Style>
+
+        <Style x:Key="ConnectActionButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#008F61" />
+        </Style>
+
+        <Style x:Key="DisconnectActionButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#D40000" />
+        </Style>
+
+        <Style x:Key="FormPrimaryButton" TargetType="Button">
+            <Setter Property="Padding" Value="16,7" />
+            <Setter Property="Background" Value="#153A5B" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style x:Key="FormSecondaryButton" TargetType="Button">
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#D6DCE6" />
+        </Style>
     </Application.Resources>
 </Application>

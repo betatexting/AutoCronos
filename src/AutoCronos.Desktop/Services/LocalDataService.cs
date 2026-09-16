@@ -14,9 +14,11 @@ public sealed class LocalDataService
     private const string InitialColumnName = "Informativo Recebido";
     private const string ReviewColumnName = "Conferencia";
     private const string StartDeactivationColumnName = "Iniciar Inativacao";
+    private const string InProgressColumnName = "Em Andamento";
     private static readonly string[] SampleTaxIds = ["12345678000190", "98765432000110"];
     private readonly DbContextOptions<AutoCronosDbContext> _options;
     private readonly GmailEmailIntegrationService _gmail = new();
+    private readonly Suite360IntegrationService _suite360 = new();
     private readonly SemaphoreSlim _databaseLock = new(1, 1);
 
     public LocalDataService()
@@ -45,7 +47,10 @@ public sealed class LocalDataService
         SeedLegacyCustomBoardFields(database);
         RemoveSampleData(database);
         RepairCompanyNames(database);
+        RemovePendingSuiteTicketApprovalsForActiveCards(database);
         var notifications = AdvanceDueCards(database, out _);
+        if (database.ChangeTracker.HasChanges())
+            database.SaveChanges();
         RefreshViews(database);
         OnStateChanged();
         return notifications;
@@ -101,17 +106,114 @@ public sealed class LocalDataService
         database.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_EmailCardLinks_IncomingEmailId\" ON \"EmailCardLinks\" (\"IncomingEmailId\");");
         database.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_EmailCardLinks_ProcessOccurrenceId\" ON \"EmailCardLinks\" (\"ProcessOccurrenceId\");");
         database.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS \"IX_EmailCardLinks_OperationDefinitionId\" ON \"EmailCardLinks\" (\"OperationDefinitionId\");");
+        EnsureColumn(database, "Operations", "CreatesSuiteTickets", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(database, "IncomingEmails", "Sender", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "ProcessOccurrenceId", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketTypeId", "INTEGER NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketOriginId", "INTEGER NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketSectorId", "INTEGER NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketExecutorId", "INTEGER NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketCustomerTaxId", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketSourceEmail", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketCustomerIds", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketTitle", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketDescription", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketId", "INTEGER NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketProtocol", "TEXT NULL");
+        EnsureColumn(database, "Approvals", "SuiteTicketProtocols", "TEXT NULL");
     }
 
-    public async Task ResolveApprovalAsync(Guid approvalId, bool approve, CancellationToken cancellationToken = default)
+    private static void EnsureColumn(AutoCronosDbContext database, string tableName, string columnName, string columnDefinition)
+    {
+        var connection = database.Database.GetDbConnection();
+        var wasOpen = connection.State == System.Data.ConnectionState.Open;
+        if (!wasOpen)
+            connection.Open();
+
+        try
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"PRAGMA table_info(\"{tableName}\")";
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                        return;
+                }
+            }
+
+            using var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = $"ALTER TABLE \"{tableName}\" ADD COLUMN \"{columnName}\" {columnDefinition}";
+            alterCommand.ExecuteNonQuery();
+        }
+        finally
+        {
+            if (!wasOpen)
+                connection.Close();
+        }
+    }
+
+    public async Task ResolveApprovalAsync(
+        Guid approvalId,
+        bool approve,
+        SuiteTicketSubmission? suiteTicket = null,
+        CancellationToken cancellationToken = default)
     {
         await _databaseLock.WaitAsync(cancellationToken);
         try
         {
-            string? providerMessageId;
             using var database = new AutoCronosDbContext(_options);
+            var approval = database.Approvals.SingleOrDefault(item => item.Id == approvalId && item.Status == ApprovalStatus.Pending)
+                ?? throw new InvalidOperationException("A pendencia selecionada nao esta mais disponivel.");
+            if (approval.Type == ApprovalType.CreateSuiteTicket && approve)
+            {
+                var occurrence = approval.ProcessOccurrenceId is { } statusOccurrenceId
+                    ? database.Occurrences.Include(item => item.Process).SingleOrDefault(item => item.Id == statusOccurrenceId)
+                    : null;
+                var operation = occurrence?.Process is { } process
+                    ? database.Operations.Include(item => item.Columns).Single(item => item.Id == process.OperationDefinitionId)
+                    : null;
+                if (occurrence is null || operation is null || !HasReachedSuiteTicketTrigger(operation, occurrence.CurrentColumn))
+                    throw new InvalidOperationException("O card nao esta mais na etapa de abertura do chamado. Mova-o novamente para Em Andamento.");
+                if (suiteTicket is null)
+                    throw new InvalidOperationException("Revise os dados do chamado antes de aprovar.");
+                ValidateSuiteTicketSubmission(suiteTicket);
+
+                var tickets = await CreateSuiteTicketsAsync(suiteTicket, cancellationToken);
+                approval.Status = ApprovalStatus.Approved;
+                approval.SuiteTicketCustomerIds = string.Join(",", suiteTicket.CustomerIds.Distinct().Order());
+                approval.SuiteTicketTypeId = (int)suiteTicket.TicketTypeId;
+                approval.SuiteTicketOriginId = (int)suiteTicket.OriginId;
+                approval.SuiteTicketSectorId = (int)suiteTicket.SectorId;
+                approval.SuiteTicketExecutorId = suiteTicket.ExecutorId is { } executorId ? (int)executorId : null;
+                approval.SuiteTicketTitle = suiteTicket.Title.Trim();
+                approval.SuiteTicketDescription = suiteTicket.Description.Trim();
+                approval.SuiteTicketId = tickets.Ids[0];
+                approval.SuiteTicketProtocol = tickets.Protocols.FirstOrDefault();
+                approval.SuiteTicketProtocols = string.Join(",", tickets.Protocols);
+                if (approval.ProcessOccurrenceId is { } occurrenceId)
+                {
+                    var references = tickets.Protocols.Count > 0
+                        ? string.Join(", ", tickets.Protocols)
+                        : string.Join(", ", tickets.Ids.Select(id => $"#{id}"));
+                    database.HistoryEntries.Add(new ProcessHistoryEntry
+                    {
+                        ProcessOccurrenceId = occurrenceId,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        EventType = "ChamadoSuite360Criado",
+                        Description = $"{tickets.Ids.Count} chamado(s) ({references}) criado(s) no Suite360 apos aprovacao humana."
+                    });
+                }
+
+                database.SaveChanges();
+                RefreshViews(database);
+                OnStateChanged();
+                return;
+            }
+
             var incomingEmailId = database.Approvals.Where(x => x.Id == approvalId).Select(x => x.IncomingEmailId).SingleOrDefault();
-            providerMessageId = incomingEmailId is null
+            var providerMessageId = incomingEmailId is null
                 ? null
                 : database.IncomingEmails.Where(x => x.Id == incomingEmailId).Select(x => x.ProviderMessageId).SingleOrDefault();
 
@@ -126,6 +228,83 @@ public sealed class LocalDataService
         {
             _databaseLock.Release();
         }
+    }
+
+    public async Task<SuiteTicketApprovalEditor> GetSuiteTicketApprovalEditorAsync(
+        Guid approvalId,
+        bool loadSuiteData = true,
+        CancellationToken cancellationToken = default)
+    {
+        string activityName;
+        string? sourceEmail;
+        string? customerTaxId;
+        string? companyName;
+        string title;
+        string description;
+        await _databaseLock.WaitAsync(cancellationToken);
+        try
+        {
+            using var database = new AutoCronosDbContext(_options);
+            var approval = database.Approvals.SingleOrDefault(item => item.Id == approvalId && item.Status == ApprovalStatus.Pending && item.Type == ApprovalType.CreateSuiteTicket)
+                ?? throw new InvalidOperationException("A pendencia de chamado selecionada nao esta mais disponivel.");
+            activityName = approval.SuiteTicketTitle ?? approval.Title;
+            sourceEmail = approval.SuiteTicketSourceEmail;
+            customerTaxId = approval.SuiteTicketCustomerTaxId;
+            companyName = approval.ProcessId is { } processId
+                ? database.Processes.Where(item => item.Id == processId).Select(item => item.CompanyName).SingleOrDefault()
+                : null;
+            title = approval.SuiteTicketTitle ?? activityName;
+            description = approval.SuiteTicketDescription ?? approval.Description;
+        }
+        finally
+        {
+            _databaseLock.Release();
+        }
+
+        if (!loadSuiteData)
+        {
+            return new SuiteTicketApprovalEditor(
+                approvalId,
+                activityName,
+                sourceEmail,
+                title,
+                description,
+                [],
+                [],
+                [],
+                [],
+                []);
+        }
+
+        var candidatesTask = _suite360.FindCustomersAsync(sourceEmail, customerTaxId, companyName, cancellationToken);
+        var formTask = _suite360.GetTicketFormOptionsAsync(cancellationToken);
+        await Task.WhenAll(candidatesTask, formTask);
+        var form = formTask.Result;
+        return new SuiteTicketApprovalEditor(
+            approvalId,
+            activityName,
+            sourceEmail,
+            title,
+            description,
+            candidatesTask.Result,
+            form.TicketTypes,
+            form.Origins,
+            form.Sectors,
+            form.Executors);
+    }
+
+    private Task<SuiteTicketsCreated> CreateSuiteTicketsAsync(SuiteTicketSubmission ticket, CancellationToken cancellationToken)
+    {
+        return _suite360.CreateTicketsAsync(new SuiteTicketRequest(
+            ticket.CustomerIds,
+            (int)ticket.TicketTypeId,
+            (int)ticket.OriginId,
+            (int)ticket.SectorId,
+            ticket.ExecutorId is { } executorId ? (int)executorId : null,
+            ticket.Title.Trim(),
+            ticket.Description.Trim(),
+            FinalizeImmediately: false),
+            cancellationToken);
     }
 
     public EmailConnectionStatus GetEmailStatus() => _gmail.GetStatus();
@@ -233,7 +412,17 @@ public sealed class LocalDataService
             .AsEnumerable().Select(approval =>
             {
                 processes.TryGetValue(approval.ProcessId ?? Guid.Empty, out var process);
-                return new WarningItem(approval.Id, approval.Title, process?.CompanyName ?? "Processo nao localizado", process is null ? "-" : FormatTaxId(process.TaxId), approval.Description, approval.CreatedAtUtc);
+                var taxId = approval.Type == ApprovalType.CreateSuiteTicket
+                    ? approval.SuiteTicketCustomerTaxId
+                    : process?.TaxId;
+                return new WarningItem(
+                    approval.Id,
+                    approval.Type,
+                    approval.Title,
+                    process?.CompanyName ?? "Processo nao localizado",
+                    string.IsNullOrWhiteSpace(taxId) ? "-" : FormatTaxId(taxId),
+                    approval.Description,
+                    approval.CreatedAtUtc);
             }).ToList();
     }
 
@@ -371,7 +560,8 @@ public sealed class LocalDataService
             operation.EmailRules.OrderBy(rule => rule.SubjectPattern).Select(rule => rule.SubjectPattern).ToList(),
             deadlineRule?.Amount,
             deadlineRule?.Unit,
-            deadlineRule?.TargetColumnName);
+            deadlineRule?.TargetColumnName,
+            operation.CreatesSuiteTickets);
     }
 
     public async Task<Guid> CreateBoardAsync(BoardCreationRequest request, CancellationToken cancellationToken = default)
@@ -444,7 +634,8 @@ public sealed class LocalDataService
                     ShowOnCard = field.ShowOnCard,
                     EmailSource = field.EmailSource,
                     SortOrder = index + 1
-                }).ToList()
+                }).ToList(),
+                CreatesSuiteTickets = request.CreatesSuiteTickets
             };
             if (request.AutomaticMoveAmount is { } amount)
             {
@@ -538,6 +729,7 @@ public sealed class LocalDataService
 
             using var transaction = database.Database.BeginTransaction();
             operation.Name = name;
+            operation.CreatesSuiteTickets = request.CreatesSuiteTickets;
             var retainedIds = cardFields.Where(field => field.Id.HasValue).Select(field => field.Id!.Value).ToHashSet();
             database.CardFieldDefinitions.RemoveRange(operation.CardFields.Where(field => !retainedIds.Contains(field.Id)));
             database.EmailRules.RemoveRange(operation.EmailRules);
@@ -590,6 +782,21 @@ public sealed class LocalDataService
                     Amount = amount,
                     TargetColumnName = targetColumnName!
                 });
+
+                var targetColumn = operation.Columns.Single(column => SameColumn(column.Name, targetColumnName!));
+                var columnsBeforeTarget = operation.Columns
+                    .Where(column => column.SortOrder < targetColumn.SortOrder)
+                    .Select(column => column.Name)
+                    .ToHashSet();
+                var activeOccurrencesWithoutDeadline = database.Occurrences
+                    .Where(occurrence =>
+                        occurrence.Process!.OperationDefinitionId == operation.Id &&
+                        occurrence.Status == OccurrenceStatus.Active &&
+                        occurrence.DeadlineAtUtc == null &&
+                        columnsBeforeTarget.Contains(occurrence.CurrentColumn))
+                    .ToList();
+                foreach (var occurrence in activeOccurrencesWithoutDeadline)
+                    occurrence.DeadlineAtUtc = DeadlineCalculator.Calculate(occurrence.ReceivedAtUtc, request.AutomaticMoveUnit.Value, amount);
             }
 
             database.SaveChanges();
@@ -713,7 +920,7 @@ public sealed class LocalDataService
     public async Task<Guid> CreateManualTaskCardAsync(ManualTaskCardInput input, CancellationToken cancellationToken = default)
     {
         var companyName = input.CompanyName.Trim();
-        var taxId = NormalizeTaxId(input.TaxId);
+        var taxId = DomainText.NormalizeTaxId(input.TaxId);
         if (string.IsNullOrWhiteSpace(companyName))
             throw new InvalidOperationException("Informe a razao social da empresa.");
         if (taxId is null)
@@ -761,7 +968,6 @@ public sealed class LocalDataService
             process.Occurrences.Add(occurrence);
             if (isNewProcess)
                 database.Processes.Add(process);
-
             database.SaveChanges();
             RefreshViews(database);
             OnStateChanged();
@@ -773,7 +979,7 @@ public sealed class LocalDataService
         }
     }
 
-    public async Task MoveTaskCardAsync(Guid occurrenceId, string targetColumnName, CancellationToken cancellationToken = default)
+    public async Task<Guid?> MoveTaskCardAsync(Guid occurrenceId, string targetColumnName, CancellationToken cancellationToken = default)
     {
         await _databaseLock.WaitAsync(cancellationToken);
         try
@@ -796,7 +1002,7 @@ public sealed class LocalDataService
                 ?? throw new InvalidOperationException("A coluna de destino nao existe.");
 
             if (card.CurrentColumn == targetColumn.Name)
-                return;
+                return null;
 
             var movedAtUtc = DateTime.UtcNow;
             var updatedRows = database.Occurrences
@@ -815,10 +1021,22 @@ public sealed class LocalDataService
                 EventType = "CardMovido",
                 Description = $"Card movido de {card.CurrentColumn} para {targetColumn.Name}."
             });
+            Guid? ticketApprovalId = null;
+            if (IsSuiteTicketTriggerColumn(operation, targetColumn))
+            {
+                var process = database.Processes.Single(item => item.Id == card.ProcessId);
+                var occurrence = database.Occurrences.Single(item => item.Id == occurrenceId);
+                ticketApprovalId = CreateSuiteTicketApprovalIfNeeded(database, operation, process, occurrence);
+            }
+            else if (!HasReachedSuiteTicketTrigger(operation, targetColumn.Name))
+            {
+                RemovePendingSuiteTicketApproval(database, occurrenceId);
+            }
             database.SaveChanges();
             RefreshViews(database);
             OnStateChanged();
             RaiseColumnNotification(targetColumn.Name, processInfo.CompanyName, automatic: false);
+            return ticketApprovalId;
         }
         finally
         {
@@ -876,6 +1094,8 @@ public sealed class LocalDataService
             }
             else
             {
+                var approvals = database.Approvals.Where(item => item.ProcessOccurrenceId == occurrence.Id).ToList();
+                database.Approvals.RemoveRange(approvals);
                 database.Occurrences.Remove(occurrence);
             }
 
@@ -1089,6 +1309,23 @@ public sealed class LocalDataService
                 });
             }
 
+            if (IsSuiteTicketTriggerColumn(operation, targetColumn))
+            {
+                var customerTaxId = definitions
+                    .Where(definition => definition.EmailSource == EmailFieldSource.TaxId)
+                    .Select(definition => editor.Fields.FirstOrDefault(field => field.DefinitionId == definition.Id)?.Value)
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+                var customerEmail = definitions
+                    .Where(definition => definition.EmailSource == EmailFieldSource.Sender)
+                    .Select(definition => editor.Fields.FirstOrDefault(field => field.DefinitionId == definition.Id)?.Value)
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+                CreateSuiteTicketApprovalIfNeeded(database, operation, process, occurrence, customerTaxId, customerEmail);
+            }
+            else if (!HasReachedSuiteTicketTrigger(operation, targetColumn.Name))
+            {
+                RemovePendingSuiteTicketApproval(database, occurrence.Id);
+            }
+
             database.SaveChanges();
             RefreshViews(database);
             OnStateChanged();
@@ -1100,6 +1337,19 @@ public sealed class LocalDataService
         {
             _databaseLock.Release();
         }
+    }
+
+    private static void ValidateSuiteTicketSubmission(SuiteTicketSubmission ticket)
+    {
+        if (!ticket.CustomerIds.Any(id => id > 0))
+            throw new InvalidOperationException("Selecione ao menos uma empresa para criar os chamados.");
+        if (ticket.TicketTypeId is <= 0 or > int.MaxValue ||
+            ticket.OriginId is <= 0 or > int.MaxValue ||
+            ticket.SectorId is <= 0 or > int.MaxValue ||
+            ticket.ExecutorId is <= 0 or > int.MaxValue)
+            throw new InvalidOperationException("Selecione tipo, origem, setor e um executor valido quando necessario.");
+        if (string.IsNullOrWhiteSpace(ticket.Title) || string.IsNullOrWhiteSpace(ticket.Description))
+            throw new InvalidOperationException("Informe o titulo e a descricao do chamado.");
     }
 
     private static void ValidateCustomFields(IEnumerable<CustomCardFieldEditor> fields)
@@ -1143,6 +1393,7 @@ public sealed class LocalDataService
             var targetColumn = database.KanbanColumns
                 .SingleOrDefault(column => column.OperationDefinitionId == process.OperationDefinitionId && column.Name == details.CurrentColumn)
                 ?? throw new InvalidOperationException("A coluna selecionada nao existe.");
+            var operation = database.Operations.Single(item => item.Id == process.OperationDefinitionId);
             var duplicateExists = database.Processes.Any(item => item.Id != process.Id && item.OperationDefinitionId == process.OperationDefinitionId && item.TaxId == taxId);
             if (duplicateExists)
                 throw new InvalidOperationException("Ja existe um processo para este CPF/CNPJ.");
@@ -1179,6 +1430,10 @@ public sealed class LocalDataService
                     Description = $"Coluna alterada de {previousColumn} para {targetColumn.Name} pela edicao do card."
                 });
             }
+            if (IsSuiteTicketTriggerColumn(operation, targetColumn))
+                CreateSuiteTicketApprovalIfNeeded(database, operation, process, occurrence);
+            else if (!HasReachedSuiteTicketTrigger(operation, targetColumn.Name))
+                RemovePendingSuiteTicketApproval(database, occurrence.Id);
 
             database.SaveChanges();
             RefreshViews(database);
@@ -1265,6 +1520,8 @@ public sealed class LocalDataService
                         EventType = "PrazoAtingido",
                         Description = $"Card movido automaticamente de {previousColumn} para {targetColumn.Name} ao atingir o prazo."
                     });
+                    if (IsSuiteTicketTriggerColumn(operation, targetColumn))
+                        CreateSuiteTicketApprovalIfNeeded(database, operation, process, occurrence);
                     movedCount++;
                     var notification = BuildColumnNotification(targetColumn.Name, process.CompanyName, automatic: true);
                     if (notification is not null)
@@ -1283,25 +1540,92 @@ public sealed class LocalDataService
         var rule = operation.DeadlineRules.FirstOrDefault(item => item.EventType == EmailEventType.InitialNotice);
         if (rule is null)
             return null;
-        return rule.Unit switch
-        {
-            DeadlineUnit.Hours => createdAtUtc.AddHours(rule.Amount),
-            DeadlineUnit.CalendarDays => createdAtUtc.AddDays(rule.Amount),
-            DeadlineUnit.BusinessDays => AddBusinessDays(createdAtUtc, rule.Amount),
-            _ => null
-        };
+        return DeadlineCalculator.Calculate(createdAtUtc, rule.Unit, rule.Amount);
     }
 
-    private static DateTime AddBusinessDays(DateTime initial, int days)
+    private static bool IsSuiteTicketTriggerColumn(OperationDefinition operation, KanbanColumnDefinition column)
     {
-        var result = initial;
-        while (days > 0)
-        {
-            result = result.AddDays(1);
-            if (result.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
-                days--;
-        }
-        return result;
+        var inProgressColumn = operation.Columns.FirstOrDefault(item => IsInProgressColumn(item.Name));
+        return inProgressColumn is not null ? column.Id == inProgressColumn.Id : column.IsTerminal;
+    }
+
+    private static bool HasReachedSuiteTicketTrigger(OperationDefinition operation, string columnName)
+    {
+        var currentColumn = operation.Columns.FirstOrDefault(item => SameColumn(item.Name, columnName));
+        var triggerColumn = operation.Columns.FirstOrDefault(item => IsInProgressColumn(item.Name))
+                            ?? operation.Columns.FirstOrDefault(item => item.IsTerminal);
+        return currentColumn is not null && triggerColumn is not null && currentColumn.SortOrder >= triggerColumn.SortOrder;
+    }
+
+    private static bool IsInProgressColumn(string columnName) =>
+        NormalizeName(columnName).EndsWith(NormalizeName(InProgressColumnName), StringComparison.Ordinal);
+
+    private static Guid? CreateSuiteTicketApprovalIfNeeded(
+        AutoCronosDbContext database,
+        OperationDefinition operation,
+        Process process,
+        ProcessOccurrence occurrence,
+        string? customerTaxId = null,
+        string? sourceEmail = null)
+    {
+        if (!operation.CreatesSuiteTickets)
+            return null;
+
+        var existingApproval = database.Approvals
+            .Where(item => item.Type == ApprovalType.CreateSuiteTicket && item.ProcessOccurrenceId == occurrence.Id)
+            .Select(item => new { item.Id, item.Status })
+            .SingleOrDefault();
+        if (existingApproval is not null)
+            return existingApproval.Status == ApprovalStatus.Pending ? existingApproval.Id : null;
+
+        var source = database.EmailCardLinks
+            .Where(link => link.ProcessOccurrenceId == occurrence.Id)
+            .Join(database.IncomingEmails,
+                link => link.IncomingEmailId,
+                email => email.Id,
+                (_, email) => new { email.TaxId, email.Sender, email.Subject, email.ReceivedAtUtc })
+            .OrderByDescending(email => email.ReceivedAtUtc)
+            .FirstOrDefault();
+        var approval = SuiteTicketApprovalFactory.Create(
+            operation,
+            process,
+            occurrence,
+            customerTaxId ?? source?.TaxId ?? process.TaxId,
+            source?.Subject ?? "Processo iniciado.",
+            sourceEmail ?? source?.Sender);
+        database.Approvals.Add(approval);
+        return approval.Id;
+    }
+
+    private static void RemovePendingSuiteTicketApproval(AutoCronosDbContext database, Guid occurrenceId)
+    {
+        var pendingApprovals = database.Approvals
+            .Where(item => item.Type == ApprovalType.CreateSuiteTicket &&
+                           item.Status == ApprovalStatus.Pending &&
+                           item.ProcessOccurrenceId == occurrenceId)
+            .ToList();
+        database.Approvals.RemoveRange(pendingApprovals);
+    }
+
+    private static void RemovePendingSuiteTicketApprovalsForActiveCards(AutoCronosDbContext database)
+    {
+        var pendingApprovals = database.Approvals
+            .Join(database.Occurrences,
+                approval => approval.ProcessOccurrenceId,
+                occurrence => (Guid?)occurrence.Id,
+                (approval, occurrence) => new { approval, occurrence.CurrentColumn, occurrence.ProcessId })
+            .Join(database.Processes,
+                item => item.ProcessId,
+                process => process.Id,
+                (item, process) => new { item.approval, item.CurrentColumn, process.OperationDefinitionId })
+            .Where(item => item.approval.Type == ApprovalType.CreateSuiteTicket &&
+                           item.approval.Status == ApprovalStatus.Pending)
+            .ToList();
+        var operations = database.Operations.Include(item => item.Columns).ToDictionary(item => item.Id);
+        database.Approvals.RemoveRange(pendingApprovals
+            .Where(item => !operations.TryGetValue(item.OperationDefinitionId, out var operation) ||
+                           !HasReachedSuiteTicketTrigger(operation, item.CurrentColumn))
+            .Select(item => item.approval));
     }
 
     private static void RepairCompanyNames(AutoCronosDbContext database)
@@ -1352,12 +1676,6 @@ public sealed class LocalDataService
         _ => taxId
     };
 
-    private static string? NormalizeTaxId(string? value)
-    {
-        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
-        return digits.Length is 11 or 14 ? digits : null;
-    }
-
     private static bool SameColumn(string left, string right) =>
         string.Equals(NormalizeName(left), NormalizeName(right), StringComparison.Ordinal);
 
@@ -1394,6 +1712,11 @@ public sealed class LocalDataService
         {
             var action = automatic ? "foi movido automaticamente" : "foi movido";
             return new AppNotification("Iniciar inativacao", $"{companyName} {action} para Iniciar Inativacao.", automatic);
+        }
+        if (IsInProgressColumn(columnName))
+        {
+            var action = automatic ? "foi iniciado automaticamente" : "foi iniciado";
+            return new AppNotification("Processo iniciado", $"O processo de {companyName} {action} e esta Em Andamento.", automatic);
         }
         return null;
     }

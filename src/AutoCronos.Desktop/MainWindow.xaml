@@ -7,237 +7,494 @@
     Height="700"
     MinWidth="900"
     MinHeight="560"
-    Background="#F5F7FA">
-    <Grid Margin="28">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <DockPanel Margin="0,0,0,22" LastChildFill="False">
-            <StackPanel DockPanel.Dock="Left">
-                <TextBlock x:Name="BoardTitleTextBlock" Text="Devolucoes" FontSize="28" FontWeight="SemiBold" Foreground="#172033" />
-                <TextBlock Text="Quadro de tarefas e integracao de e-mail" FontSize="14" Foreground="#61708A" Margin="0,4,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <ComboBox
-                        x:Name="BoardComboBox"
-                        Width="230"
-                        Padding="8,5"
-                        DisplayMemberPath="Name"
-                        SelectionChanged="BoardComboBox_SelectionChanged" />
-                    <Button
-                        x:Name="EditBoardRulesButton"
-                        Content="Editar regras"
-                        Click="EditBoardRules_Click"
-                        IsEnabled="False"
-                        Padding="10,5"
-                        Margin="8,0,0,0"
-                        Background="White"
-                        BorderBrush="#D6DCE6" />
-                    <Button
-                        x:Name="DeleteBoardButton"
-                        Content="Excluir quadro"
-                        Click="DeleteBoard_Click"
-                        IsEnabled="False"
-                        Padding="10,5"
-                        Margin="8,0,0,0"
-                        Background="White"
-                        BorderBrush="#D6DCE6" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <TextBlock Text="Selecione um card para mover ou excluir." VerticalAlignment="Center" FontSize="12" Foreground="#61708A" />
-                    <Button
-                        x:Name="DeleteSelectedCardButton"
-                        Content="Excluir card"
-                        Click="DeleteSelectedCard_Click"
-                        IsEnabled="False"
-                        Padding="10,5"
-                        Margin="12,0,0,0"
-                        Background="White"
-                        BorderBrush="#D6DCE6" />
-                </StackPanel>
-            </StackPanel>
-
-            <Border
-                x:Name="EmailStatusBorder"
-                DockPanel.Dock="Right"
-                Background="#FFF2D9"
-                CornerRadius="14"
-                Padding="16,12"
-                Width="410">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Margin="0,0,12,0">
-                        <TextBlock x:Name="EmailStatusTextBlock" FontWeight="SemiBold" Foreground="#7E5613" />
-                        <TextBlock x:Name="EmailDetailTextBlock" Margin="0,4,0,0" Foreground="#7E5613" TextWrapping="Wrap" FontSize="12" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button
-                            x:Name="SyncEmailButton"
-                            Content="Sincronizar"
-                            Click="SyncEmail_Click"
-                            Padding="12,7"
-                            Background="#153A5B"
-                            Foreground="White"
-                            BorderThickness="0" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-        </DockPanel>
-
-        <ScrollViewer x:Name="BoardHorizontalScrollViewer" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel Orientation="Horizontal">
-            <ItemsControl x:Name="ColumnsItemsControl">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border
-                            Width="260"
-                            Height="{Binding ActualHeight, ElementName=BoardHorizontalScrollViewer}"
-                            Margin="0,0,16,0"
-                            Background="#E9EDF3"
-                            CornerRadius="14"
-                            Padding="13"
-                            AllowDrop="True"
-                            DragOver="Column_DragOver"
-                            Drop="Column_Drop">
-                            <DockPanel>
-                                <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#27344B" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                    <Button
-                                        Grid.Column="1"
-                                        Content="+"
-                                        Tag="{Binding}"
-                                        Click="AddManualCard_Click"
-                                        ToolTip="Criar card manualmente"
-                                        Width="26"
-                                        Height="26"
-                                        Margin="6,0,0,0"
-                                        Padding="0"
-                                        Background="White"
-                                        BorderBrush="#C9D2DE"
-                                        Foreground="#153A5B"
-                                        FontSize="17"
-                                        FontWeight="SemiBold">
-                                        <Button.Style>
-                                            <Style TargetType="Button">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding AllowsManualCard}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                    <Button
-                                        Grid.Column="2"
-                                        Content="&#x00D7;"
-                                        Tag="{Binding}"
-                                        Click="DeleteColumn_Click"
-                                        ToolTip="Excluir coluna"
-                                        Width="26"
-                                        Height="26"
-                                        Margin="6,0,0,0"
-                                        Padding="0"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Foreground="#A4382E"
-                                        FontSize="17" />
-                                </Grid>
-                                <ScrollViewer
-                                    VerticalScrollBarVisibility="Hidden"
-                                    HorizontalScrollBarVisibility="Disabled"
-                                    PanningMode="VerticalOnly"
-                                    PreviewMouseWheel="ColumnCards_PreviewMouseWheel">
-                                    <ItemsControl ItemsSource="{Binding Cards}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border
-                                                    CornerRadius="10"
-                                                    Padding="13"
-                                                    Margin="0,0,0,10"
-                                                    Cursor="SizeAll"
-                                                    PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown"
-                                                    MouseLeftButtonUp="Card_MouseLeftButtonUp"
-                                                    MouseMove="Card_MouseMove">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="White" />
-                                                            <Setter Property="BorderBrush" Value="Transparent" />
-                                                            <Setter Property="BorderThickness" Value="1" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="#356D9E" />
-                                                                    <Setter Property="BorderThickness" Value="2" />
-                                                                    <Setter Property="Background" Value="#F2F8FC" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <StackPanel>
-                                                            <TextBlock Text="{Binding DisplayCompanyName}" FontWeight="SemiBold" Foreground="#172033" TextWrapping="Wrap" />
-                                                                <TextBlock Text="{Binding TaxId}" Margin="0,4,0,0" Foreground="#61708A" FontSize="12" TextWrapping="Wrap" />
-                                                                <TextBlock Text="{Binding DeadlineLabel}" Margin="0,10,0,0" Foreground="#B25B13" FontWeight="SemiBold" FontSize="12" />
-                                                                <TextBlock Text="{Binding ElapsedLabel}" Margin="0,4,0,0" Foreground="#61708A" FontSize="11" />
-                                                        </StackPanel>
-                                                        <Button
-                                                            Grid.Column="1"
-                                                            Content="×"
-                                                            Tag="{Binding}"
-                                                            Click="DeleteCard_Click"
-                                                            ToolTip="Excluir card"
-                                                            Width="22"
-                                                            Height="22"
-                                                            Margin="8,0,0,0"
-                                                            Padding="0"
-                                                            Background="Transparent"
-                                                            BorderThickness="0"
-                                                            Foreground="#A4382E"
-                                                            FontSize="16" />
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </DockPanel>
+    Background="#050505"
+    FontFamily="./Assets/Fonts/#Bebas Neue">
+    <Window.Resources>
+        <Style x:Key="PanelButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Foreground" Value="#E7E7E7" />
+            <Setter Property="Background" Value="#111111" />
+            <Setter Property="BorderBrush" Value="#747474" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="./Assets/Fonts/#Bebas Neue" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-                <Button
-                    Content="+  Nova coluna"
-                    Click="AddColumn_Click"
-                    Width="150"
-                    Height="46"
-                    Margin="0,4,18,0"
-                    Padding="12,7"
-                    VerticalAlignment="Top"
-                    Background="White"
-                    BorderBrush="#C9D2DE"
-                    Foreground="#153A5B"
-                    FontWeight="SemiBold" />
-            </StackPanel>
-        </ScrollViewer>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#292929" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#A0A0A0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#3A3A3A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.38" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource PanelButton}">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Arial" />
+            <Setter Property="FontSize" Value="18" />
+        </Style>
+
+        <Style x:Key="BoardSelectorItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#E7E7E7" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="9,7" />
+            <Setter Property="FontFamily" Value="./Assets/Fonts/#Horizon" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder" Background="{TemplateBinding Background}">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                              ContentStringFormat="{TemplateBinding ContentStringFormat}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#383838" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#4A4A4A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BoardSelector" TargetType="ComboBox">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource BoardSelectorItem}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="#333333"
+                                          BorderBrush="#5C5C5C"
+                                          BorderThickness="1"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Focusable="False">
+                                <Path Data="M 0 0 L 9 0 L 4.5 6 Z"
+                                      Fill="#BBBBBB"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Placement="Bottom"
+                                   PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                                   HorizontalOffset="-236"
+                                   VerticalOffset="3"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   PopupAnimation="Fade">
+                                <Border Width="264"
+                                        Background="#161616"
+                                        BorderBrush="#696969"
+                                        BorderThickness="1"
+                                        CornerRadius="2">
+                                    <ScrollViewer MaxHeight="250" CanContentScroll="True">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BoardScrollBar" TargetType="ScrollBar">
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageLeftCommand" Background="Transparent" BorderThickness="0" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Background="#871CFF" Height="3" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageRightCommand" Background="Transparent" BorderThickness="0" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CarouselNavButton" TargetType="Button" BasedOn="{StaticResource PanelButton}">
+            <Setter Property="Width" Value="104" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Arial" />
+            <Setter Property="FontSize" Value="27" />
+        </Style>
+    </Window.Resources>
+
+    <Grid ClipToBounds="True">
+        <Image Source="/Assets/background-symbol.png"
+            Width="900"
+            Height="900"
+            Stretch="Uniform"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Center"
+            Margin="0,0,-180,-60"
+            IsHitTestVisible="False" />
+
+        <Border Height="3" VerticalAlignment="Bottom" Background="#871CFF" />
+
+        <Grid Margin="22,17,22,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="91" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="380" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center" Margin="34,0,0,4">
+                    <StackPanel Orientation="Horizontal" Height="30">
+                        <Border Height="26"
+                                MinWidth="236"
+                                Padding="4,0,8,0"
+                                Background="#4A4A4A"
+                                BorderBrush="#777777"
+                                BorderThickness="1"
+                                CornerRadius="2">
+                            <TextBlock x:Name="BoardTitleTextBlock"
+                                       VerticalAlignment="Center"
+                                       Text="QUADRO"
+                                       Foreground="#F6F6F6"
+                                       FontFamily="./Assets/Fonts/#Horizon"
+                                       FontSize="19"
+                                       FontStretch="Condensed"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Border>
+                        <ComboBox x:Name="BoardComboBox"
+                                  Style="{StaticResource BoardSelector}"
+                                  Margin="-1,0,0,0"
+                                  SelectionChanged="BoardComboBox_SelectionChanged"
+                                  ToolTip="Selecionar quadro">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}"
+                                               Foreground="#E7E7E7"
+                                               FontFamily="./Assets/Fonts/#Horizon" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button x:Name="EditBoardRulesButton"
+                                Style="{StaticResource IconButton}"
+                                Margin="9,0,0,0"
+                                Content="⚙"
+                                Click="EditBoardRules_Click"
+                                IsEnabled="False"
+                                ToolTip="Editar regras do quadro" />
+                        <Button x:Name="DeleteBoardButton"
+                                Style="{StaticResource IconButton}"
+                                Margin="4,0,0,0"
+                                Content="×"
+                                Click="DeleteBoard_Click"
+                                IsEnabled="False"
+                                Foreground="#E40010"
+                                ToolTip="Excluir quadro" />
+                    </StackPanel>
+                    <TextBlock Text="QUADRO DE TAREFAS E INTEGRAÇÕES VIA E-MAIL"
+                               Margin="2,2,0,0"
+                               Foreground="#BEBEBE"
+                               FontFamily="./Assets/Fonts/#Bebas Neue"
+                               FontSize="9" />
+                </StackPanel>
+
+                <Border x:Name="EmailStatusBorder"
+                        Grid.Column="1"
+                        Height="78"
+                        Padding="8"
+                        Margin="0,0,0,3"
+                        VerticalAlignment="Center"
+                        Background="#242424"
+                        BorderBrush="#4C4C4C"
+                        BorderThickness="2"
+                        CornerRadius="2">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="112" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,10,0">
+                            <TextBlock Text="E-MAIL"
+                                       Foreground="#D6D6D6"
+                                       FontFamily="./Assets/Fonts/#Bebas Neue"
+                                       FontSize="9" />
+                            <TextBlock x:Name="EmailStatusTextBlock"
+                                       Margin="0,4,0,0"
+                                       Foreground="#F2F2F2"
+                                       FontFamily="./Assets/Fonts/#Bebas Neue"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="EmailDetailTextBlock"
+                                       Margin="0,2,0,0"
+                                       Foreground="#989898"
+                                       FontSize="9"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button x:Name="SyncEmailButton"
+                                Grid.Column="1"
+                                Height="38"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource PanelButton}"
+                                Content="SINCRONIZAR"
+                                Click="SyncEmail_Click"
+                                FontSize="10"
+                                ToolTip="Sincronizar e-mails" />
+                    </Grid>
+                </Border>
+
+                <!-- A exclusão pelo card continua sendo a ação principal da referência. -->
+                <Button x:Name="DeleteSelectedCardButton"
+                        Visibility="Collapsed"
+                        Content="Excluir card"
+                        Click="DeleteSelectedCard_Click" />
+            </Grid>
+
+            <Grid Grid.Row="1"
+                  Margin="0,0,0,32">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="172" />
+                </Grid.ColumnDefinitions>
+
+                <ScrollViewer x:Name="BoardHorizontalScrollViewer"
+                              Grid.Column="0"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled"
+                              Padding="0,14,0,2"
+                              ScrollChanged="BoardHorizontalScrollViewer_ScrollChanged"
+                              SizeChanged="BoardHorizontalScrollViewer_SizeChanged">
+                    <ScrollViewer.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource BoardScrollBar}" />
+                    </ScrollViewer.Resources>
+                    <StackPanel Orientation="Horizontal">
+                    <ItemsControl x:Name="ColumnsItemsControl">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="222"
+                                        Height="{Binding ActualHeight, ElementName=BoardHorizontalScrollViewer}"
+                                        Margin="0,0,14,0"
+                                        Padding="12,12,12,8"
+                                        Background="#101010"
+                                        BorderBrush="#777777"
+                                        BorderThickness="1"
+                                        CornerRadius="5"
+                                        AllowDrop="True"
+                                        DragOver="Column_DragOver"
+                                        Drop="Column_Drop">
+                                    <DockPanel LastChildFill="True">
+                                        <Grid DockPanel.Dock="Top" Height="28" Margin="0,0,0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Name}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="#C8C8C8"
+                                                       FontFamily="./Assets/Fonts/#Bebas Neue"
+                                                       FontSize="11"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Button Grid.Column="1"
+                                                    Width="23"
+                                                    Height="23"
+                                                    Margin="4,0,0,0"
+                                                    Padding="0"
+                                                    Background="Transparent"
+                                                    BorderBrush="#BDBDBD"
+                                                    BorderThickness="1"
+                                                    Content="⊞"
+                                                    Foreground="#EDEDED"
+                                                    FontFamily="Arial"
+                                                    FontSize="15"
+                                                    FontWeight="Bold"
+                                                    Tag="{Binding}"
+                                                    Click="AddManualCard_Click"
+                                                    ToolTip="Criar card manualmente">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource PanelButton}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding AllowsManualCard}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <Button Grid.Column="2"
+                                                    Style="{StaticResource IconButton}"
+                                                    Margin="4,0,0,0"
+                                                    Content="×"
+                                                    Foreground="#E40010"
+                                                    FontSize="19"
+                                                    Tag="{Binding}"
+                                                    Click="DeleteColumn_Click"
+                                                    ToolTip="Excluir coluna" />
+                                        </Grid>
+
+                                        <ScrollViewer VerticalScrollBarVisibility="Hidden"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      PanningMode="VerticalOnly"
+                                                      PreviewMouseWheel="ColumnCards_PreviewMouseWheel">
+                                            <ItemsControl ItemsSource="{Binding Cards}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border MinHeight="84"
+                                                                Margin="0,0,0,15"
+                                                                Padding="9"
+                                                                Background="#2D2D2D"
+                                                                CornerRadius="5"
+                                                                Cursor="SizeAll"
+                                                                PreviewMouseLeftButtonDown="Card_PreviewMouseLeftButtonDown"
+                                                                MouseLeftButtonUp="Card_MouseLeftButtonUp"
+                                                                MouseMove="Card_MouseMove">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#2D2D2D" />
+                                                                    <Setter Property="BorderBrush" Value="Transparent" />
+                                                                    <Setter Property="BorderThickness" Value="1" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                            <Setter Property="Background" Value="#383838" />
+                                                                            <Setter Property="BorderBrush" Value="#9A9A9A" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding DisplayCompanyName}"
+                                                                               Foreground="#F1F1F1"
+                                                                               FontFamily="./Assets/Fonts/#Bebas Neue"
+                                                                               FontSize="12"
+                                                                               TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding TaxId}"
+                                                                               Margin="0,2,0,0"
+                                                                               Foreground="#D4D4D4"
+                                                                               FontFamily="./Assets/Fonts/#Bebas Neue"
+                                                                               FontSize="10"
+                                                                               TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding DeadlineLabel}"
+                                                                               Margin="0,12,0,0"
+                                                                               Foreground="#D0D0D0"
+                                                                               FontFamily="./Assets/Fonts/#Bebas Neue"
+                                                                               FontSize="9" />
+                                                                    <TextBlock Text="{Binding ElapsedLabel}"
+                                                                               Margin="0,2,0,0"
+                                                                               Foreground="#9E9E9E"
+                                                                               FontFamily="./Assets/Fonts/#Bebas Neue"
+                                                                               FontSize="9" />
+                                                                </StackPanel>
+                                                                <Button Grid.Column="1"
+                                                                        Style="{StaticResource IconButton}"
+                                                                        Width="16"
+                                                                        Height="16"
+                                                                        Margin="4,0,0,0"
+                                                                        Content="×"
+                                                                        Foreground="#E40010"
+                                                                        FontSize="14"
+                                                                        Tag="{Binding}"
+                                                                        Click="DeleteCard_Click"
+                                                                        ToolTip="Excluir card" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Width="130"
+                            Height="36"
+                            Margin="0,4,18,0"
+                            VerticalAlignment="Top"
+                            Style="{StaticResource PanelButton}"
+                            Content="+  NOVA COLUNA"
+                            Click="AddColumn_Click"
+                            ToolTip="Adicionar coluna" />
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Grid Grid.Column="1">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Button x:Name="NextCarouselButton"
+                                Style="{StaticResource CarouselNavButton}"
+                                Content="&#x2192;"
+                                Click="NextCarousel_Click"
+                                ToolTip="Avançar o carrossel" />
+                        <Button x:Name="PreviousCarouselButton"
+                                Margin="0,12,0,0"
+                                Style="{StaticResource CarouselNavButton}"
+                                Content="&#x2190;"
+                                Click="PreviousCarousel_Click"
+                                ToolTip="Retornar o carrossel" />
+                    </StackPanel>
+
+                </Grid>
+            </Grid>
+        </Grid>
     </Grid>
 </Window>

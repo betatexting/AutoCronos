@@ -1,5 +1,7 @@
 # Credenciais OAuth locais do Google.
 /secret_Key/
 **/gmail-integration.json
+**/suite360-integration.json
 **/bin/
 **/obj/
+/dist/

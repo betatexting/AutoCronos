@@ -75,6 +75,7 @@ public partial class BoardCreationWindow : Window
         DeadlineAmountTextBox.Text = editor.AutomaticMoveAmount?.ToString() ?? "30";
         DeadlineUnitComboBox.SelectedValue = editor.AutomaticMoveUnit ?? DeadlineUnit.CalendarDays;
         TargetColumnTextBox.Text = editor.AutomaticMoveTargetColumn ?? editor.ColumnNames.LastOrDefault() ?? string.Empty;
+        CreateSuiteTicketCheckBox.IsChecked = editor.CreatesSuiteTickets;
 
         foreach (var field in editor.CardFields)
         {
@@ -140,6 +141,8 @@ public partial class BoardCreationWindow : Window
         }
 
         var fields = Fields.Select(field => new CardFieldDefinitionInput(field.Name, field.FieldType, field.IsRequired, field.ShowOnCard, field.EmailSource, field.Id)).ToList();
+        var createsSuiteTickets = CreateSuiteTicketCheckBox.IsChecked == true;
+
         CreateButton.IsEnabled = false;
         try
         {
@@ -152,11 +155,20 @@ public partial class BoardCreationWindow : Window
                     patterns,
                     amount,
                     unit,
-                    targetColumn));
+                    targetColumn,
+                    createsSuiteTickets));
             }
             else
             {
-                await _data.CreateBoardAsync(new BoardCreationRequest(BoardNameTextBox.Text, columns, fields, patterns, amount, unit, targetColumn));
+                await _data.CreateBoardAsync(new BoardCreationRequest(
+                    BoardNameTextBox.Text,
+                    columns,
+                    fields,
+                    patterns,
+                    amount,
+                    unit,
+                    targetColumn,
+                    createsSuiteTickets));
             }
             DialogResult = true;
         }

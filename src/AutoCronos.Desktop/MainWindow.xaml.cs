@@ -5,11 +5,13 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using AutoCronos.Desktop.Domain;
 using AutoCronos.Desktop.Services;
+using AutoCronos.Desktop.Windows;
 
 namespace AutoCronos.Desktop;
 
 public partial class MainWindow : Window
 {
+    private const double CarouselColumnStep = 236;
     private readonly LocalDataService _data;
     private TaskCard? _selectedCard;
     private Point _dragStartPosition;
@@ -41,10 +43,36 @@ public partial class MainWindow : Window
             card.UpdateElapsedTime();
     }
 
+    private void PreviousCarousel_Click(object sender, RoutedEventArgs e)
+    {
+        BoardHorizontalScrollViewer.ScrollToHorizontalOffset(Math.Max(
+            0,
+            BoardHorizontalScrollViewer.HorizontalOffset - CarouselColumnStep));
+    }
+
+    private void NextCarousel_Click(object sender, RoutedEventArgs e)
+    {
+        BoardHorizontalScrollViewer.ScrollToHorizontalOffset(Math.Min(
+            BoardHorizontalScrollViewer.ScrollableWidth,
+            BoardHorizontalScrollViewer.HorizontalOffset + CarouselColumnStep));
+    }
+
+    private void BoardHorizontalScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateCarouselNavigation();
+
+    private void BoardHorizontalScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateCarouselNavigation();
+
+    private void UpdateCarouselNavigation()
+    {
+        const double offsetTolerance = 0.5;
+        PreviousCarouselButton.IsEnabled = BoardHorizontalScrollViewer.HorizontalOffset > offsetTolerance;
+        NextCarouselButton.IsEnabled = BoardHorizontalScrollViewer.HorizontalOffset < BoardHorizontalScrollViewer.ScrollableWidth - offsetTolerance;
+    }
+
     private void RefreshView()
     {
         BoardTitleTextBlock.Text = _data.Board.Name;
         ColumnsItemsControl.ItemsSource = _data.Board.Columns;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateCarouselNavigation));
         _refreshingBoards = true;
         BoardComboBox.ItemsSource = _data.Boards;
         var selectedBoard = _data.Boards.FirstOrDefault(item => item.Id == _data.Board.Id);
@@ -56,28 +84,16 @@ public partial class MainWindow : Window
         DeleteSelectedCardButton.IsEnabled = false;
 
         var status = _data.GetEmailStatus();
-        EmailStatusTextBlock.Text = status.StatusText;
+        EmailStatusTextBlock.Text = status.IsConnected
+            ? "E-MAIL CONECTADO"
+            : status.IsConfigured
+                ? "E-MAIL AGUARDANDO CONEXAO"
+                : "E-MAIL NAO CONFIGURADO";
         EmailDetailTextBlock.Text = status.DetailText;
         SyncEmailButton.IsEnabled = status.IsConnected;
-
-        if (status.IsConnected)
-        {
-            EmailStatusBorder.Background = Brush("#E7F6EC");
-            EmailStatusTextBlock.Foreground = Brush("#237A45");
-            EmailDetailTextBlock.Foreground = Brush("#237A45");
-        }
-        else if (status.IsConfigured)
-        {
-            EmailStatusBorder.Background = Brush("#FFF2D9");
-            EmailStatusTextBlock.Foreground = Brush("#7E5613");
-            EmailDetailTextBlock.Foreground = Brush("#7E5613");
-        }
-        else
-        {
-            EmailStatusBorder.Background = Brush("#FCEBEA");
-            EmailStatusTextBlock.Foreground = Brush("#A4382E");
-            EmailDetailTextBlock.Foreground = Brush("#A4382E");
-        }
+        EmailStatusBorder.Background = Brush("#242424");
+        EmailStatusTextBlock.Foreground = Brush(status.IsConnected ? "#F2F2F2" : status.IsConfigured ? "#F0B35A" : "#EC7373");
+        EmailDetailTextBlock.Foreground = Brush("#989898");
     }
 
     private async void BoardComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -263,7 +279,18 @@ public partial class MainWindow : Window
 
         try
         {
-            await _data.MoveTaskCardAsync(card.OccurrenceId, column.Name);
+            var ticketApprovalId = await _data.MoveTaskCardAsync(card.OccurrenceId, column.Name);
+            if (ticketApprovalId is { } approvalId)
+            {
+                try
+                {
+                    await SuiteTicketApprovalWorkflow.OpenAsync(this, _data, approvalId);
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(this, exception.Message, "Abrir chamado", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
         }
         catch (Exception exception)
         {
