@@ -54,9 +54,10 @@ public partial class WhatsAppMonitorWindow : ChromeWindow
             .ToList();
         var visible = eligible.Where(MatchesSelectedSummaryFilters).ToList();
         ConversationsListBox.ItemsSource = visible;
-        OpenCountTextBlock.Text = eligible.Count.ToString();
-        WaitingCountTextBlock.Text = eligible.Count(item => item.Status == "aguardando").ToString();
-        InServiceCountTextBlock.Text = eligible.Count(item => item.Status == "em_atendimento").ToString();
+        OpenCountTextBlock.Text = eligible.Count(item => !item.IsTemplate).ToString();
+        WaitingCountTextBlock.Text = eligible.Count(item => !item.IsTemplate && item.Status == "aguardando").ToString();
+        InServiceCountTextBlock.Text = eligible.Count(item => !item.IsTemplate && item.Status == "em_atendimento").ToString();
+        TemplateCountTextBlock.Text = eligible.Count(item => item.IsTemplate).ToString();
         OverdueCountTextBlock.Text = eligible.Count(item => item.IsOverdue).ToString();
         SyncStatusTextBlock.Text = snapshot.ErrorMessage is not null
             ? $"Falha na atualização: {snapshot.ErrorMessage}"
@@ -71,11 +72,13 @@ public partial class WhatsAppMonitorWindow : ChromeWindow
 
     private bool MatchesSelectedSummaryFilters(WhatsAppConversationView conversation)
     {
-        if (_selectedSummaryFilters.Count == 0 || _selectedSummaryFilters.Contains("Open"))
+        if (_selectedSummaryFilters.Count == 0)
             return true;
 
-        return (_selectedSummaryFilters.Contains("Waiting") && conversation.Status == "aguardando") ||
-               (_selectedSummaryFilters.Contains("InService") && conversation.Status == "em_atendimento") ||
+        return (_selectedSummaryFilters.Contains("Open") && !conversation.IsTemplate) ||
+               (_selectedSummaryFilters.Contains("Waiting") && !conversation.IsTemplate && conversation.Status == "aguardando") ||
+               (_selectedSummaryFilters.Contains("InService") && !conversation.IsTemplate && conversation.Status == "em_atendimento") ||
+               (_selectedSummaryFilters.Contains("Template") && conversation.IsTemplate) ||
                (_selectedSummaryFilters.Contains("Overdue") && conversation.IsOverdue);
     }
 

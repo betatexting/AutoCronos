@@ -16,6 +16,7 @@ public sealed class ApprovalDecisionService(AutoCronosDbContext database)
         {
             approval.Status = ApprovalStatus.Rejected;
             if (email is not null && approval.Type == ApprovalType.DuplicateNotice) email.IsRejectedAsDuplicate = true;
+            AddReplyAuditHistory(approval, process, approved: false);
             database.SaveChanges();
             return;
         }
@@ -66,8 +67,29 @@ public sealed class ApprovalDecisionService(AutoCronosDbContext database)
                 });
         }
 
+        AddReplyAuditHistory(approval, process, approved: true);
+
         approval.Status = ApprovalStatus.Approved;
         database.SaveChanges();
+    }
+
+    private void AddReplyAuditHistory(ApprovalItem approval, Process? process, bool approved)
+    {
+        if (approval.Type != ApprovalType.ReplyAudit || process is null)
+            return;
+
+        var occurrence = approval.ProcessOccurrenceId is { } occurrenceId
+            ? process.Occurrences.FirstOrDefault(item => item.Id == occurrenceId)
+            : process.Occurrences.OrderByDescending(item => item.Number).FirstOrDefault();
+        if (occurrence is null)
+            return;
+
+        database.HistoryEntries.Add(History(
+            occurrence.Id,
+            approved ? "RespostaAuditadaAprovada" : "RespostaAuditadaRecusada",
+            approved
+                ? "Resposta de colaborador revisada e aprovada pelo usuario."
+                : "Resposta de colaborador revisada e recusada pelo usuario."));
     }
 
     private static ProcessHistoryEntry History(Guid occurrenceId, string eventType, string description) => new()

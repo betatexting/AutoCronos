@@ -17,6 +17,7 @@ public sealed class GmailEmailIntegrationService
 {
     private const string SettingsFileName = "gmail-integration.json";
     private const string CredentialsDirectoryName = "secret_Key";
+    private const string EmbeddedCredentialsResourceName = "AutoCronos.GmailOAuthCredentials";
     private const string InboxLabelName = "AutoCronos/Entrada";
     private const string ProcessedLabelName = "AutoCronos/Processado";
     private const string PendingLabelName = "AutoCronos/Pendente";
@@ -67,7 +68,13 @@ public sealed class GmailEmailIntegrationService
                     : "Adicione o JSON OAuth em secret_Key para habilitar a integracao.";
         }
 
-        return new EmailConnectionStatus(isConfigured, isConnected, statusText, detailText, _settings.EmailAddress, _settings.LastSyncAtUtc);
+        return new EmailConnectionStatus(
+            isConfigured,
+            isConnected,
+            statusText,
+            detailText,
+            isConnected ? _settings.EmailAddress : null,
+            _settings.LastSyncAtUtc);
     }
 
     public Task<EmailConnectionStatus> ConnectAsync(CancellationToken cancellationToken = default) =>
@@ -515,12 +522,35 @@ public sealed class GmailEmailIntegrationService
         var isReply = !string.IsNullOrWhiteSpace(GetHeader(document.RootElement, "In-Reply-To")) ||
                       !string.IsNullOrWhiteSpace(GetHeader(document.RootElement, "References")) ||
                       Regex.IsMatch(subject, @"^\s*(?:re|res|aw|sv)\s*:", RegexOptions.IgnoreCase);
+        var isFromConnectedAccount = IsSameEmailAddress(sender, _settings.EmailAddress);
+        IReadOnlyList<string> conversationMessageIds = [messageId];
+        if (isReply && !isFromConnectedAccount &&
+            document.RootElement.TryGetProperty("threadId", out var threadIdElement) &&
+            !string.IsNullOrWhiteSpace(threadIdElement.GetString()))
+        {
+            conversationMessageIds = await GetThreadMessageIdsAsync(accessToken, threadIdElement.GetString()!, cancellationToken);
+        }
         var body = ExtractBody(document.RootElement);
         var internalDate = document.RootElement.TryGetProperty("internalDate", out var internalDateElement)
             ? ParseInternalDate(internalDateElement.GetString())
             : DateTime.UtcNow;
 
-        return new GmailMessage(messageId, subject, sender, body, internalDate, isReply);
+        return new GmailMessage(messageId, subject, sender, body, internalDate, isReply, isFromConnectedAccount, conversationMessageIds);
+    }
+
+    private async Task<IReadOnlyList<string>> GetThreadMessageIdsAsync(string accessToken, string threadId, CancellationToken cancellationToken)
+    {
+        using var request = CreateAuthorizedRequest(HttpMethod.Get, $"https://gmail.googleapis.com/gmail/v1/users/me/threads/{threadId}?format=minimal", accessToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var document = await ReadJsonAsync(response, cancellationToken);
+        if (!document.RootElement.TryGetProperty("messages", out var messagesElement))
+            return [];
+
+        return messagesElement.EnumerateArray()
+            .Select(element => element.TryGetProperty("id", out var idElement) ? idElement.GetString() : null)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .ToList();
     }
 
     private async Task<string> GetThreadIdAsync(string accessToken, string messageId, CancellationToken cancellationToken)
@@ -563,7 +593,28 @@ public sealed class GmailEmailIntegrationService
         var taxId = ExtractTaxId(message.Subject, message.Body);
         var companyName = EmailCompanyNameExtractor.Extract(message.Subject, message.Body);
         var competence = ExtractCompetence(message.Subject, message.Body);
-        return new EmailInput(message.Id, message.Subject, taxId, companyName, competence, message.ReceivedAtUtc, message.Sender, message.Body, message.IsReply);
+        return new EmailInput(
+            message.Id,
+            message.Subject,
+            taxId,
+            companyName,
+            competence,
+            message.ReceivedAtUtc,
+            message.Sender,
+            message.Body,
+            message.IsReply,
+            message.IsFromConnectedAccount,
+            message.ConversationMessageIds);
+    }
+
+    private static bool IsSameEmailAddress(string sender, string? connectedEmail)
+    {
+        if (string.IsNullOrWhiteSpace(connectedEmail))
+            return false;
+
+        var angleBracketMatch = Regex.Match(sender, @"<(?<email>[^<>\s]+@[^<>\s]+)>");
+        var senderAddress = angleBracketMatch.Success ? angleBracketMatch.Groups["email"].Value : sender.Trim();
+        return string.Equals(senderAddress, connectedEmail.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ExtractTaxId(string subject, string body)
@@ -596,6 +647,7 @@ public sealed class GmailEmailIntegrationService
         result.Message.Contains("sem regra reconhecida", StringComparison.OrdinalIgnoreCase) ||
         result.Message.Contains("CPF/CNPJ valido", StringComparison.OrdinalIgnoreCase) ||
         result.Message.Contains("Resposta de e-mail", StringComparison.OrdinalIgnoreCase) ||
+        result.Message.Contains("Resposta enviada pela conta conectada", StringComparison.OrdinalIgnoreCase) ||
         result.Message.Contains("mais de um quadro", StringComparison.OrdinalIgnoreCase) ||
         result.Message.Contains("nao possui coluna inicial", StringComparison.OrdinalIgnoreCase);
 
@@ -787,12 +839,15 @@ public sealed class GmailEmailIntegrationService
     private void LoadProjectCredentials()
     {
         var credentialsPath = FindProjectCredentialsPath();
-        if (credentialsPath is null)
-            return;
-
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(credentialsPath));
+            using var credentialsStream = credentialsPath is not null
+                ? File.OpenRead(credentialsPath)
+                : typeof(GmailEmailIntegrationService).Assembly.GetManifestResourceStream(EmbeddedCredentialsResourceName);
+            if (credentialsStream is null)
+                return;
+
+            using var document = JsonDocument.Parse(credentialsStream);
             var root = document.RootElement;
             if (root.TryGetProperty("web", out _))
                 throw new InvalidOperationException("O JSON deve conter um cliente OAuth do tipo Aplicativo para computador.");
@@ -813,7 +868,7 @@ public sealed class GmailEmailIntegrationService
         }
         catch (Exception exception)
         {
-            _lastMessage = $"Nao foi possivel carregar as credenciais de secret_Key: {SimplifyException(exception)}";
+            _lastMessage = $"Nao foi possivel carregar as credenciais OAuth do Google: {SimplifyException(exception)}";
         }
     }
 
@@ -871,5 +926,13 @@ public sealed class GmailEmailIntegrationService
     private sealed record GmailTokenResponse(string AccessToken, string RefreshToken);
     private sealed record GmailAuthorizationResult(string AccessToken, string RefreshToken, string EmailAddress);
     private sealed record GmailLabelSet(string InboxLabelId, string ProcessedLabelId, string PendingLabelId, string IgnoredLabelId);
-    private sealed record GmailMessage(string Id, string Subject, string Sender, string Body, DateTime ReceivedAtUtc, bool IsReply);
+    private sealed record GmailMessage(
+        string Id,
+        string Subject,
+        string Sender,
+        string Body,
+        DateTime ReceivedAtUtc,
+        bool IsReply,
+        bool IsFromConnectedAccount,
+        IReadOnlyList<string> ConversationMessageIds);
 }

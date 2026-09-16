@@ -11,7 +11,9 @@ public sealed record EmailInput(
     DateTime ReceivedAtUtc,
     string Sender,
     string Body,
-    bool IsReply);
+    bool IsReply,
+    bool IsFromConnectedAccount,
+    IReadOnlyList<string> ConversationMessageIds);
 
 public sealed record EmailProcessingResult(bool AlreadyProcessed, bool CreatedProcess, Guid? ApprovalId, string Message);
 

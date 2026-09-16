@@ -17,7 +17,8 @@ public sealed record WhatsAppConversationView(
     string LastMessage,
     DateTime LastMessageAtUtc,
     string ElapsedLabel,
-    bool IsOverdue);
+    bool IsOverdue,
+    bool IsTemplate);
 
 public sealed record WhatsAppSectorView(long? Id, string Name, int OpenCount);
 
@@ -26,11 +27,12 @@ public sealed record WhatsAppMonitorSnapshot(
     IReadOnlyList<WhatsAppSectorView> Sectors,
     int WaitingCount,
     int InServiceCount,
+    int TemplateCount,
     int OverdueCount,
     DateTime UpdatedAtUtc,
     string? ErrorMessage = null)
 {
-    public static WhatsAppMonitorSnapshot Empty { get; } = new([], [], 0, 0, 0, DateTime.MinValue);
+    public static WhatsAppMonitorSnapshot Empty { get; } = new([], [], 0, 0, 0, 0, DateTime.MinValue);
     public int OpenCount => WaitingCount + InServiceCount;
 }
 

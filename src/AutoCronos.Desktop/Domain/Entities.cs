@@ -3,7 +3,7 @@ namespace AutoCronos.Desktop.Domain;
 public enum EmailEventType { InitialNotice, CompetenceChange }
 public enum DeadlineUnit { Hours, CalendarDays, BusinessDays }
 public enum OccurrenceStatus { Active, Completed }
-public enum ApprovalType { DuplicateNotice, ReactivateProcess, ChangeCompetence, MissingProcess, CreateSuiteTicket }
+public enum ApprovalType { DuplicateNotice, ReactivateProcess, ChangeCompetence, MissingProcess, CreateSuiteTicket, ReplyAudit }
 public enum ApprovalStatus { Pending, Approved, Rejected }
 public enum CardFieldType { Text, Number, Date }
 public enum EmailFieldSource { None, Subject, Sender, CompanyName, TaxId, Competence, ReceivedAt, Body }

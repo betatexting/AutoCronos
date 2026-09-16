@@ -243,6 +243,8 @@ public sealed class Suite360IntegrationService
                                DateTime.UtcNow;
         var protocolStartedAtUtc = ReadSuiteDateTimeUtc(element, "criado_em") ?? lastMessageAtUtc;
         var finalizedAtUtc = ReadSuiteDateTimeUtc(element, "finalizada_em");
+        var lastMessageType = ReadString(element, "last_message_type") ?? string.Empty;
+        var origin = ReadString(element, "origem") ?? string.Empty;
         return new SuiteWhatsAppConversation(
             id,
             hashId,
@@ -257,6 +259,8 @@ public sealed class Suite360IntegrationService
             attendantId,
             unreadCount,
             ReadString(element, "last_message") ?? string.Empty,
+            lastMessageType,
+            origin,
             lastMessageAtUtc,
             protocolStartedAtUtc,
             finalizedAtUtc);
@@ -533,6 +537,8 @@ public sealed record SuiteWhatsAppConversation(
     long? AttendantId,
     int UnreadCount,
     string LastMessage,
+    string LastMessageType,
+    string Origin,
     DateTime LastMessageAtUtc,
     DateTime ProtocolStartedAtUtc,
     DateTime? FinalizedAtUtc);

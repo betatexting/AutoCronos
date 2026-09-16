@@ -29,3 +29,5 @@ A chave é solicitada no terminal sem ser exibida e armazenada protegida pelo Wi
 Coloque um unico arquivo JSON de credenciais OAuth do tipo **Aplicativo para computador** em `secret_Key/`, na raiz do repositorio.
 O AutoCronos o localiza e carrega automaticamente ao iniciar. A pasta e ignorada pelo Git.
 
+Ao executar `Gerar-Executavel.bat`, esse JSON e incorporado ao executavel. Assim, a pasta `secret_Key` nao precisa ser distribuida. Cada usuario ainda deve autorizar sua propria conta Google na primeira utilizacao; a opcao **Conectar outra conta** substitui a conta ativa.
+

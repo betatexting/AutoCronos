@@ -113,6 +113,7 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Border x:Name="OpenSummaryCard" Grid.Column="0" Style="{StaticResource SummaryCard}" MouseLeftButtonDown="SummaryCard_MouseLeftButtonDown" Uid="Open">
                         <StackPanel><TextBlock Foreground="#8E8E8E" FontSize="10" Text="ABERTOS" /><TextBlock x:Name="OpenCountTextBlock" Foreground="White" FontSize="27" FontWeight="SemiBold" /></StackPanel>
@@ -123,7 +124,10 @@
                     <Border x:Name="InServiceSummaryCard" Grid.Column="2" Style="{StaticResource SummaryCard}" MouseLeftButtonDown="SummaryCard_MouseLeftButtonDown" Uid="InService">
                         <StackPanel><TextBlock Foreground="#8E8E8E" FontSize="10" Text="EM ATENDIMENTO" /><TextBlock x:Name="InServiceCountTextBlock" Foreground="#6DA9E4" FontSize="27" FontWeight="SemiBold" /></StackPanel>
                     </Border>
-                    <Border x:Name="OverdueSummaryCard" Grid.Column="3" Style="{StaticResource SummaryCard}" Margin="0" MouseLeftButtonDown="SummaryCard_MouseLeftButtonDown" Uid="Overdue">
+                    <Border x:Name="TemplateSummaryCard" Grid.Column="3" Style="{StaticResource SummaryCard}" MouseLeftButtonDown="SummaryCard_MouseLeftButtonDown" Uid="Template">
+                        <StackPanel><TextBlock Foreground="#8E8E8E" FontSize="10" Text="TEMPLATES" /><TextBlock x:Name="TemplateCountTextBlock" Foreground="#B58CE6" FontSize="27" FontWeight="SemiBold" /></StackPanel>
+                    </Border>
+                    <Border x:Name="OverdueSummaryCard" Grid.Column="4" Style="{StaticResource SummaryCard}" Margin="0" MouseLeftButtonDown="SummaryCard_MouseLeftButtonDown" Uid="Overdue">
                         <StackPanel><TextBlock Foreground="#8E8E8E" FontSize="10" Text="ACIMA DO PRAZO" /><TextBlock x:Name="OverdueCountTextBlock" Foreground="#EC7373" FontSize="27" FontWeight="SemiBold" /></StackPanel>
                     </Border>
                 </Grid>

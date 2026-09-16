@@ -17,9 +17,31 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
 
         if (input.IsReply)
         {
-            database.IncomingEmails.Add(IncomingEmailFactory.Create(input, null));
+            var email = IncomingEmailFactory.Create(input, null);
+            database.IncomingEmails.Add(email);
+
+            if (input.IsFromConnectedAccount)
+            {
+                database.SaveChanges();
+                return new EmailProcessingResult(false, false, null, "Resposta enviada pela conta conectada registrada sem criar card.");
+            }
+
+            var context = FindReplyContext(input);
+            var approval = new ApprovalItem
+            {
+                Type = ApprovalType.ReplyAudit,
+                ProcessId = context.ProcessId,
+                ProcessOccurrenceId = context.OccurrenceId,
+                IncomingEmailId = email.Id,
+                Title = "Resposta de colaborador para auditoria",
+                Description = context.ProcessId is null
+                    ? $"Resposta recebida de {input.Sender}. A mensagem original ou processo relacionado nao foi localizado automaticamente; revise antes de aprovar ou recusar."
+                    : $"Resposta recebida de {input.Sender} e vinculada ao processo localizado na conversa. Revise antes de aprovar ou recusar.",
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            database.Approvals.Add(approval);
             database.SaveChanges();
-            return new EmailProcessingResult(false, false, null, "Resposta de e-mail registrada sem criar card.");
+            return new EmailProcessingResult(false, false, approval.Id, approval.Title);
         }
 
         var normalizedSubject = DomainText.NormalizeSubject(input.Subject);
@@ -67,6 +89,44 @@ public sealed class BoardEmailProcessor(AutoCronosDbContext database)
             return new DevolutionEmailProcessor(database).Process(input);
 
         return CreateCustomBoardCard(operation, input);
+    }
+
+    private (Guid? ProcessId, Guid? OccurrenceId) FindReplyContext(EmailInput input)
+    {
+        var relatedMessageIds = input.ConversationMessageIds
+            .Where(id => !string.Equals(id, input.ProviderMessageId, StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (relatedMessageIds.Count > 0)
+        {
+            var linkedContext = (from email in database.IncomingEmails
+                                 join link in database.EmailCardLinks on email.Id equals link.IncomingEmailId
+                                 join linkedOccurrence in database.Occurrences on link.ProcessOccurrenceId equals linkedOccurrence.Id
+                                 where relatedMessageIds.Contains(email.ProviderMessageId)
+                                 orderby email.ReceivedAtUtc descending
+                                 select new { linkedOccurrence.ProcessId, OccurrenceId = linkedOccurrence.Id })
+                .FirstOrDefault();
+            if (linkedContext is not null)
+                return (linkedContext.ProcessId, linkedContext.OccurrenceId);
+        }
+
+        var normalizedTaxId = DomainText.NormalizeTaxId(input.TaxId);
+        if (string.IsNullOrWhiteSpace(normalizedTaxId))
+            return (null, null);
+
+        var candidates = database.Processes
+            .Include(process => process.Occurrences)
+            .Where(process => process.TaxId == normalizedTaxId)
+            .ToList();
+        if (candidates.Count != 1)
+            return (null, null);
+
+        var process = candidates[0];
+        var occurrence = process.Occurrences
+            .OrderByDescending(item => item.Status == OccurrenceStatus.Active)
+            .ThenByDescending(item => item.Number)
+            .FirstOrDefault();
+        return (process.Id, occurrence?.Id);
     }
 
     private EmailProcessingResult CreateCustomBoardCard(OperationDefinition operation, EmailInput input)

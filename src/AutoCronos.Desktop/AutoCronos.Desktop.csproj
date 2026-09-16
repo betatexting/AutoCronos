@@ -22,4 +22,8 @@
     <EmbeddedResource Include="$(Suite360ApiKeyFile)" LogicalName="AutoCronos.Suite360ApiKey" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(GmailOAuthCredentialsFile)' != '' and Exists('$(GmailOAuthCredentialsFile)')">
+    <EmbeddedResource Include="$(GmailOAuthCredentialsFile)" LogicalName="AutoCronos.GmailOAuthCredentials" />
+  </ItemGroup>
+
 </Project>

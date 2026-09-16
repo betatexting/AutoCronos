@@ -1,4 +1,5 @@
 using AutoCronos.Desktop.Domain;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace AutoCronos.Desktop.Services;
@@ -46,6 +47,8 @@ public sealed class WhatsAppMonitoringService : IDisposable
             var now = DateTime.UtcNow;
             var views = conversations
                 .Select(item => CreateView(item, settings.ResponseTimeMinutes, now))
+                .Where(item => item is not null)
+                .Cast<WhatsAppConversationView>()
                 .OrderByDescending(item => item.IsOverdue)
                 .ThenByDescending(item => now - item.LastMessageAtUtc)
                 .ToList();
@@ -58,8 +61,9 @@ public sealed class WhatsAppMonitoringService : IDisposable
             Snapshot = new WhatsAppMonitorSnapshot(
                 views,
                 sectors,
-                views.Count(item => item.Status == "aguardando"),
-                views.Count(item => item.Status == "em_atendimento"),
+                views.Count(item => !item.IsTemplate && item.Status == "aguardando"),
+                views.Count(item => !item.IsTemplate && item.Status == "em_atendimento"),
+                views.Count(item => item.IsTemplate),
                 views.Count(item => item.IsOverdue),
                 now);
             _nextRefreshAtUtc = DateTime.MinValue;
@@ -98,18 +102,25 @@ public sealed class WhatsAppMonitoringService : IDisposable
         }
     }
 
-    private static WhatsAppConversationView CreateView(SuiteWhatsAppConversation item, int responseTimeMinutes, DateTime now)
+    private static WhatsAppConversationView? CreateView(SuiteWhatsAppConversation item, int responseTimeMinutes, DateTime now)
     {
+        var protocolStartedAtUtc = GetCurrentProtocolStartUtc(item);
+        var isTemplate = string.Equals(item.LastMessageType, "template", StringComparison.OrdinalIgnoreCase);
         // A mensagem que dispara a criação do protocolo pode ser gravada poucos segundos antes dele.
         var hasMessageInActiveProtocol = !string.IsNullOrWhiteSpace(item.LastMessage) &&
-                                         item.LastMessageAtUtc >= item.ProtocolStartedAtUtc.AddSeconds(-5);
+                                         item.LastMessageAtUtc >= protocolStartedAtUtc.AddSeconds(-5);
+        if (!hasMessageInActiveProtocol)
+            return null;
+
         var activityReferenceAtUtc = hasMessageInActiveProtocol
             ? item.LastMessageAtUtc
-            : item.ProtocolStartedAtUtc;
-        var elapsed = now - activityReferenceAtUtc;
+            : protocolStartedAtUtc;
+        var elapsed = isTemplate ? TimeSpan.Zero : now - activityReferenceAtUtc;
         if (elapsed < TimeSpan.Zero)
             elapsed = TimeSpan.Zero;
-        var elapsedLabel = elapsed.TotalDays >= 1
+        var elapsedLabel = isTemplate
+            ? "-"
+            : elapsed.TotalDays >= 1
             ? $"{(int)elapsed.TotalDays}d {elapsed.Hours}h"
             : elapsed.TotalHours >= 1
                 ? $"{(int)elapsed.TotalHours}h {elapsed.Minutes}min"
@@ -119,7 +130,7 @@ public sealed class WhatsAppMonitoringService : IDisposable
             item.HashId,
             item.Protocol,
             item.Status,
-            item.Status == "aguardando" ? "Aguardando" : "Em atendimento",
+            isTemplate ? "Template" : item.Status == "aguardando" ? "Aguardando" : "Em atendimento",
             item.SectorId,
             item.SectorName,
             item.ContactId,
@@ -131,7 +142,26 @@ public sealed class WhatsAppMonitoringService : IDisposable
             hasMessageInActiveProtocol ? item.LastMessage : string.Empty,
             activityReferenceAtUtc,
             elapsedLabel,
-            elapsed >= TimeSpan.FromMinutes(responseTimeMinutes));
+            !isTemplate && elapsed >= TimeSpan.FromMinutes(responseTimeMinutes),
+            isTemplate);
+    }
+
+    private static DateTime GetCurrentProtocolStartUtc(SuiteWhatsAppConversation item)
+    {
+        if (item.Protocol.Length >= 8 && DateTime.TryParseExact(
+                item.Protocol[..8],
+                "yyyyMMdd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var protocolDate))
+        {
+            var protocolDayStartUtc = DateTime.SpecifyKind(protocolDate, DateTimeKind.Local).ToUniversalTime();
+            return protocolDayStartUtc > item.ProtocolStartedAtUtc
+                ? protocolDayStartUtc
+                : item.ProtocolStartedAtUtc;
+        }
+
+        return item.ProtocolStartedAtUtc;
     }
 
     public void Dispose()

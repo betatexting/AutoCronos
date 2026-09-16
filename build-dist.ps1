@@ -10,10 +10,16 @@ $distPath = Join-Path $PSScriptRoot 'dist'
 $executablePath = Join-Path $distPath 'AutoCronos.Desktop.exe'
 $secretsDirectory = Join-Path $PSScriptRoot 'secret_Key'
 $suiteApiKeyPath = Join-Path $secretsDirectory 'suite360-api-key.txt'
+$gmailCredentialFiles = @(Get-ChildItem -LiteralPath $secretsDirectory -Filter '*.json' -File -ErrorAction SilentlyContinue)
 
 if (-not (Test-Path -LiteralPath $projectPath)) {
     throw "Projeto nao encontrado: $projectPath"
 }
+
+if ($gmailCredentialFiles.Count -ne 1) {
+    throw "A publicacao requer exatamente um JSON OAuth do Google em: $secretsDirectory (encontrados: $($gmailCredentialFiles.Count))."
+}
+$gmailCredentialsPath = $gmailCredentialFiles[0].FullName
 
 if (-not (Test-Path -LiteralPath $suiteApiKeyPath)) {
     Write-Host 'A chave do Suite360 ainda nao esta salva para publicacao.' -ForegroundColor Yellow
@@ -72,7 +78,8 @@ Write-Host 'Publicando AutoCronos para Windows x64...'
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:DebugType=None `
     -p:DebugSymbols=false `
-    -p:Suite360ApiKeyFile="$suiteApiKeyPath"
+    -p:Suite360ApiKeyFile="$suiteApiKeyPath" `
+    -p:GmailOAuthCredentialsFile="$gmailCredentialsPath"
 
 if ($LASTEXITCODE -ne 0) {
     throw "A publicacao falhou (codigo $LASTEXITCODE)."
@@ -94,6 +101,7 @@ foreach ($legacyConfigFile in $legacyConfigFiles) {
 
 Write-Host "Executavel atualizado: $executablePath" -ForegroundColor Green
 Write-Host 'A chave do Suite360 foi incorporada ao executavel publicado.' -ForegroundColor Green
+Write-Host 'As credenciais OAuth do Google foram incorporadas ao executavel publicado.' -ForegroundColor Green
 
 if ($OpenFolder) {
     Start-Process explorer.exe $distPath
