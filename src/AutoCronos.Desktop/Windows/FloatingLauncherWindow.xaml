@@ -59,6 +59,8 @@
             Width="64"
             Height="64"
             Click="LauncherButton_Click"
+            PreviewMouseLeftButtonDown="Draggable_PreviewMouseLeftButtonDown"
+            PreviewMouseMove="Draggable_PreviewMouseMove"
             Cursor="Hand"
             BorderBrush="White"
             BorderThickness="2"
@@ -80,6 +82,45 @@
             <Button.RenderTransform>
                 <ScaleTransform x:Name="LauncherScale" ScaleX="1" ScaleY="1" />
             </Button.RenderTransform>
+        </Button>
+
+        <Button x:Name="CloseLauncherButton"
+                Canvas.Left="102"
+                Canvas.Top="210"
+                Width="22"
+                Height="22"
+                Panel.ZIndex="10"
+                Content="&#x00D7;"
+                FontFamily="Arial"
+                FontSize="16"
+                Foreground="#EDEDED"
+                Background="#99000000"
+                BorderThickness="0"
+                Cursor="Hand"
+                ToolTip="Fechar o AutoCronos"
+                Click="CloseLauncherButton_Click">
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="11">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsMouseOver, ElementName=LauncherButton}" Value="True">
+                            <Setter Property="Opacity" Value="0.38" />
+                        </DataTrigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="0.72" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
         </Button>
 
         <Button

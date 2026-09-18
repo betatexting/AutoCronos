@@ -18,6 +18,7 @@ public sealed class WhatsAppMonitorSettingsService
     }
 
     public WhatsAppMonitorSettings Current { get; private set; }
+    public event EventHandler? Changed;
 
     public void SetResponseTime(int minutes)
     {
@@ -72,6 +73,7 @@ public sealed class WhatsAppMonitorSettingsService
         Current = settings;
         File.WriteAllText(_settingsPath, JsonSerializer.Serialize(
             new SettingsFile(settings.ResponseTimeMinutes, settings.HiddenSectorIds.Order().ToArray()), JsonOptions));
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     private sealed record SettingsFile(int ResponseTimeMinutes, long[] HiddenSectorIds);

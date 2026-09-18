@@ -18,6 +18,7 @@ public partial class App : System.Windows.Application
     private bool _deadlineCheckInProgress;
     private bool _notificationVisible;
     private readonly Queue<AppNotification> _notificationQueue = new();
+    private AutoCronos.Desktop.Windows.WhatsAppOverdueAlertWindow? _whatsAppOverdueAlert;
 
     public App()
     {
@@ -35,6 +36,9 @@ public partial class App : System.Windows.Application
         ConfigureEmailSyncTimer();
         ConfigureDeadlineTimer();
         _whatsAppMonitor.Start();
+        _whatsAppMonitor.SetActive(true);
+        _whatsAppMonitor.SnapshotChanged += WhatsAppMonitor_SnapshotChanged;
+        _whatsAppSettings.Changed += WhatsAppSettings_Changed;
         new AutoCronos.Desktop.Windows.FloatingLauncherWindow(OpenBoard, OpenEmailSettings, OpenWarnings, OpenWhatsAppMonitor).Show();
 
         foreach (var notification in startupNotifications)
@@ -89,8 +93,34 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _whatsAppMonitor.SnapshotChanged -= WhatsAppMonitor_SnapshotChanged;
+        _whatsAppSettings.Changed -= WhatsAppSettings_Changed;
         _whatsAppMonitor.Dispose();
         base.OnExit(e);
+    }
+
+    private void WhatsAppMonitor_SnapshotChanged(object? sender, EventArgs e) =>
+        Dispatcher.InvokeAsync(UpdateWhatsAppOverdueAlert);
+
+    private void WhatsAppSettings_Changed(object? sender, EventArgs e) =>
+        Dispatcher.InvokeAsync(UpdateWhatsAppOverdueAlert);
+
+    private void UpdateWhatsAppOverdueAlert()
+    {
+        var hiddenSectors = _whatsAppSettings.Current.HiddenSectorIds;
+        var overdueCount = _whatsAppMonitor.Snapshot.Conversations.Count(item =>
+            item.IsOverdue && (item.SectorId is null || !hiddenSectors.Contains(item.SectorId.Value)));
+
+        if (overdueCount == 0)
+        {
+            _whatsAppOverdueAlert?.UpdateCount(0);
+            return;
+        }
+
+        _whatsAppOverdueAlert ??= new AutoCronos.Desktop.Windows.WhatsAppOverdueAlertWindow(OpenWhatsAppMonitor);
+        _whatsAppOverdueAlert.UpdateCount(overdueCount);
+        if (!_whatsAppOverdueAlert.IsVisible && !_whatsAppOverdueAlert.IsSnoozed)
+            _whatsAppOverdueAlert.Show();
     }
 
     private void ConfigureEmailSyncTimer()

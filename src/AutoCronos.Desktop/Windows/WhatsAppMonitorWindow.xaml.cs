@@ -30,7 +30,6 @@ public partial class WhatsAppMonitorWindow : ChromeWindow
         _monitor.SnapshotChanged += Monitor_SnapshotChanged;
         Closed += (_, _) =>
         {
-            _monitor.SetActive(false);
             _monitor.SnapshotChanged -= Monitor_SnapshotChanged;
         };
         _monitor.SetActive(true);

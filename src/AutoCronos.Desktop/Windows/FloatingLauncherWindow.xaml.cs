@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace AutoCronos.Desktop.Windows;
@@ -24,6 +25,8 @@ public partial class FloatingLauncherWindow : Window
     private readonly Action _openWhatsApp;
     private bool _isMenuOpen;
     private bool _isAnimating;
+    private Point _dragStart;
+    private bool _wasDragged;
 
     public FloatingLauncherWindow(Action openBoard, Action openEmail, Action openWarnings, Action openWhatsApp)
     {
@@ -42,6 +45,12 @@ public partial class FloatingLauncherWindow : Window
 
     private async void LauncherButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_wasDragged)
+        {
+            _wasDragged = false;
+            return;
+        }
+
         if (_isAnimating)
             return;
 
@@ -50,6 +59,35 @@ public partial class FloatingLauncherWindow : Window
         else
             await OpenMenuAsync();
     }
+
+    private void Draggable_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStart = e.GetPosition(this);
+        _wasDragged = false;
+    }
+
+    private void Draggable_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _isAnimating)
+            return;
+
+        var current = e.GetPosition(this);
+        if (Math.Abs(current.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        _wasDragged = true;
+        try
+        {
+            DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private void CloseLauncherButton_Click(object sender, RoutedEventArgs e) =>
+        System.Windows.Application.Current.Shutdown();
 
     private async void Navigate_Click(object sender, RoutedEventArgs e)
     {
